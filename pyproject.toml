@@ -1,0 +1,15 @@
+[project]
+name = "glm-ocr-skripte"
+version = "1.7.4"
+description = "OCR zu Markdown Konverter mit TUI-Dateiauswahl"
+requires-python = ">=3.10"
+dependencies = [
+    "questionary",
+    "rich",
+    "lmstudio",
+    "pymupdf",
+    "pillow",
+]
+
+[project.scripts]
+ocr-to-markdown = "ocr_to_markdown:main"

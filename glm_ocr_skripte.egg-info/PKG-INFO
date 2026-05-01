@@ -1,0 +1,10 @@
+Metadata-Version: 2.4
+Name: glm-ocr-skripte
+Version: 1.7.4
+Summary: OCR zu Markdown Konverter mit TUI-Dateiauswahl
+Requires-Python: >=3.10
+Requires-Dist: questionary
+Requires-Dist: rich
+Requires-Dist: lmstudio
+Requires-Dist: pymupdf
+Requires-Dist: pillow

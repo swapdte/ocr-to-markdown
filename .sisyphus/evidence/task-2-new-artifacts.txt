@@ -1,0 +1,13 @@
+165:    "gedreht:",
+166:    "zwei-pass",
+167:    "zweiter pass:",
+168:    "erster pass:",
+170:    "tabellenstruktur",
+171:    "transkribiere",
+179:WICHTIG: Dieses Dokument kann sowohl horizontalen als auch vertikal/gedrehten Text enthalten.
+180:Pruefe das Bild ZWEIMAL: zuerst alle horizontalen Texte lesen, dann gezielt nach gedrehten Elementen suchen.
+186:   - ZWEITER PASS: Scanne gezielt nach gedrehten, vertikalen und rotierten Textelementen
+193:   - Erkenne Text der um 90 Grad, 180 Grad oder 270 Grad gedreht ist
+194:   - Typische gedrehte Elemente: Signaturen, Stempel, Wasserzeichen, rotierte Labels, Seitenrand-Notizen
+195:   - Transkribiere gedrehten Text korrekt in der Leserichtung, nicht in der visuellen Darstellung
+196:   - Markiere gedrehte Elemente mit [GEDREHT 90°:], [GEDREHT 180°:] oder [GEDREHT 270°:]
