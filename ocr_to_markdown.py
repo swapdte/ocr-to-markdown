@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-v1.7.5 - OCR zu Markdown Konverter mit TUI-Dateiauswahl
+v1.8.0 - OCR zu Markdown Konverter mit TUI-Dateiauswahl
 
 Verwendet ein LLM (via LM Studio) um Bilddateien und PDFs zu OCR-lesen
 und als Markdown mit Tabellen-Formatierung auszugeben.
@@ -16,6 +16,7 @@ Funktionen:
 - TUI-Dateiauswahl mit questionary
 - Fortschrittsanzeige mit rich
 - Temporaere OCR-Dateien werden automatisch geloescht
+- HTML-zu-Markdown Tabellenkonvertierung in .md Dateien (-t Flag)
 """
 
 import sys
@@ -270,6 +271,23 @@ DEINE AUFGABE:
 8. VERBOTEN: Keine HTML-Tabellen in der Ausgabe. Verwende ausschliesslich Markdown-Syntax mit Pipe-Zeichen (|)
 
 AUSGABE: Nur den verbesserten Text. Keine Kommentare, keine Erklaerung was du geaendert hast."""
+
+# Modell fuer die Tabellenkonvertierung (-t Flag)
+TABLE_CONVERSION_MODEL = "gemma-4-e4b-it"
+
+# Prompt fuer die HTML-zu-Markdown Tabellenkonvertierung
+HTML_TO_MD_TABLE_PROMPT = """Wandle alle HTML-Tabellen in dem folgenden Text in Markdown-Tabellen um.
+
+Regeln:
+1. Ersetze alle HTML-Tabellen (<table>, <tr>, <td>, <th>, <thead>, <tbody>) durch Markdown-Tabellen mit | Spalte | Format
+2. Trennzeile nach der Kopfzeile: |---|---|---| (mindestens 3 Bindestriche pro Spalte)
+3. Jede Tabellenzeile muss die gleiche Anzahl Spalten haben
+4. Gib den GESAMTEN Text zurueck - nicht nur die Tabellen
+5. Aendere nichts am restlichen Text ausserhalb der Tabellen
+6. Keine ```markdown oder ``` Code-Block-Auszeichnung um die Ausgabe
+7. VERBOTEN: Keine HTML-Tags fuer Tabellen in der Ausgabe
+
+AUSGABE: Den gesamten Text mit allen Tabellen als Markdown formatiert. Keine Kommentare, keine Erklaerung."""
 
 
 def get_files_in_directory(directory: Path) -> list[Path]:
@@ -1040,12 +1058,227 @@ def insert_text_into_pdf(pdf_path: Path, markdown_text: str) -> None:
     doc.close()
 
 
+def get_markdown_files(directory: Path) -> list[Path]:
+    """Sammle alle .md Dateien im Verzeichnis.
+
+    Args:
+        directory: Das zu durchsuchende Verzeichnis.
+
+    Returns:
+        Liste mit Path-Objekten fuer alle Markdown-Dateien.
+    """
+    files = []
+    for f in sorted(directory.iterdir()):
+        if f.is_file() and f.suffix.lower() == ".md":
+            files.append(f)
+    return files
+
+
+def select_markdown_file(start_dir: Path) -> Path | None:
+    """Zeige TUI zur Auswahl einer .md Datei und gib gewaehlten Pfad zurueck.
+
+    Listet alle Markdown-Dateien im Verzeichnis auf und erlaubt die Auswahl.
+    Bietet Ordner-Navigation an wenn keine .md Dateien gefunden werden.
+
+    Args:
+        start_dir: Das Startverzeichnis fuer die Dateiauswahl.
+
+    Returns:
+        Der ausgewaehlte Dateipfad oder None wenn abgebrochen.
+    """
+    custom_style = Style(
+        [
+            ("qmark", "fg:cyan bold"),
+            ("question", "fg:white bold"),
+            ("answer", "fg:green bold"),
+            ("pointer", "fg:cyan bold"),
+            ("highlighted", "fg:cyan bold"),
+            ("selected", "fg:green"),
+            ("separator", "fg:gray"),
+            ("instruction", "fg:gray"),
+            ("text", "fg:white"),
+        ]
+    )
+
+    files = get_markdown_files(start_dir)
+
+    if not files:
+        subdirs = sorted([d for d in start_dir.iterdir() if d.is_dir()])
+        if subdirs:
+            subdir = questionary.select(
+                "Keine .md Dateien gefunden. Waehle einen Unterordner:",
+                choices=[str(d.name) for d in subdirs] + ["[..] Uebergeordnet"],
+                style=custom_style,
+            ).ask()
+
+            if subdir is None:
+                return None
+
+            if subdir == "[..] Uebergeordnet":
+                return select_markdown_file(start_dir.parent)
+            return select_markdown_file(start_dir / subdir)
+        else:
+            console.print("[red]Keine .md Dateien gefunden![/red]")
+            return None
+
+    file_choices = []
+    for f in files:
+        size = f.stat().st_size
+        if size < 1024:
+            size_str = f"{size} B"
+        elif size < 1024 * 1024:
+            size_str = f"{size / 1024:.1f} KB"
+        else:
+            size_str = f"{size / (1024 * 1024):.1f} MB"
+
+        file_choices.append(
+            {"name": f.name, "display": f"{f.name} ({size_str})", "path": f}
+        )
+
+    choices = [fc["display"] for fc in file_choices] + ["[Ordner wechseln]"]
+
+    selected = questionary.select(
+        "Waehle eine .md Datei:",
+        choices=choices,
+        style=custom_style,
+    ).ask()
+
+    if selected is None or selected == "[Ordner wechseln]":
+        subdirs = sorted([d for d in start_dir.iterdir() if d.is_dir()])
+        if subdirs:
+            subdir = questionary.select(
+                "Waehle einen Ordner:",
+                choices=[str(d.name) for d in subdirs] + ["[..] Uebergeordnet"],
+                style=custom_style,
+            ).ask()
+
+            if subdir is None:
+                return None
+
+            if subdir == "[..] Uebergeordnet":
+                return select_markdown_file(start_dir.parent)
+            return select_markdown_file(start_dir / subdir)
+        if start_dir.parent != start_dir:
+            return select_markdown_file(start_dir.parent)
+        return None
+
+    for fc in file_choices:
+        if fc["display"] == selected:
+            return fc["path"]
+
+    return None
+
+
+def prepare_table_conversion_model(client: lms.Client) -> str:
+    """Entlade alle Modelle ausser dem Tabellenkonvertierungs-Modell und lade es.
+
+    Entlaedt alle geladenen Modelle in LM Studio die nicht das Ziel-Modell
+    (TABLE_CONVERSION_MODEL) sind, um Ressourcen freizugeben.
+
+    Args:
+        client: Verbundener LM Studio Client.
+
+    Returns:
+        Die Modellkennung des Tabellenkonvertierungs-Modells.
+    """
+    target = TABLE_CONVERSION_MODEL
+
+    # Alle geladenen Modelle ausser dem Ziel entladen
+    loaded = client.list_loaded_models(namespace="llm")
+    for lm in loaded:
+        if target.lower() not in lm.identifier.lower():
+            console.print(f"[cyan]Entlade Modell {lm.identifier}...[/cyan]")
+            try:
+                handle = client.llm.model(lm.identifier)
+                handle.unload()
+            except Exception:
+                pass
+
+    console.print(f"[green]Lade Modell {target}...[/green]")
+    return target
+
+
+def convert_html_tables_in_file(md_path: Path) -> None:
+    """Wandle alle HTML-Tabellen in einer .md Datei in Markdown-Tabellen um.
+
+    Liest die Datei, sendet den Inhalt an das Tabellenkonvertierungs-Modell
+    in LM Studio und speichert das Ergebnis zurueck in dieselbe Datei.
+
+    Args:
+        md_path: Pfad zur Markdown-Datei.
+    """
+    content = md_path.read_text(encoding="utf-8")
+
+    with Progress(
+        SpinnerColumn(),
+        TextColumn("[progress.description]{task.description}"),
+        console=console,
+    ) as progress:
+        task = progress.add_task("[cyan]Konvertiere HTML-Tabellen zu Markdown...[/cyan]")
+
+        try:
+            client = lms.Client(api_host=LMSTUDIO_HOST)
+            model_name = prepare_table_conversion_model(client)
+            model = client.llm.model(
+                model_name,
+                ttl=LMSTUDIO_TTL,
+                config={"contextLength": LMSTUDIO_CONTEXT_LENGTH},
+            )
+
+            progress.update(
+                task,
+                description=f"[yellow]Verarbeite {md_path.name} mit {model_name}...[/yellow]",
+            )
+
+            chat = lms.Chat(HTML_TO_MD_TABLE_PROMPT)
+            chat.add_user_message(content)
+
+            result = model.respond(chat)
+            converted = result.content
+
+            # Ueberfluessige Code-Block-Auszeichnungen entfernen
+            # falls das Modell trotzdem ```markdown verwendet
+            converted = converted.strip()
+            if converted.startswith("```markdown"):
+                converted = converted[len("```markdown"):].strip()
+            if converted.startswith("```"):
+                converted = converted[3:].strip()
+            if converted.endswith("```"):
+                converted = converted[:-3].strip()
+
+            md_path.write_text(converted, encoding="utf-8")
+
+            progress.update(
+                task,
+                description=f"[green]Fertig: {md_path.name} aktualisiert[/green]",
+            )
+            console.print(f"\n[bold green]Fertig![/bold green] {md_path.name} wurde aktualisiert.")
+
+        except Exception as e:
+            progress.update(
+                task,
+                description=f"[red]Fehler bei Konvertierung: {e}[/red]",
+            )
+            console.print(f"\n[bold red]Fehler:[/bold red] {e}\n")
+            raise
+
+
 def main():
     """Hauptfunktion: Dateiauswahl, OCR-Verarbeitung, Speichern."""
-    console.print("\n[bold cyan]OCR to Markdown Tool v1.7.5[/bold cyan]\n")
+    console.print("\n[bold cyan]OCR to Markdown Tool v1.8.0[/bold cyan]\n")
 
-    # Kommandozeilenargumente parsen: -d aktiviert Markdown-Nachbearbeitung
+    table_mode = "-t" in sys.argv
     debug_mode = "-d" in sys.argv
+
+    # -t Flag: HTML-zu-Markdown Tabellenkonvertierung
+    if table_mode:
+        md_file = select_markdown_file(Path.cwd())
+        if md_file is None:
+            console.print("[yellow]Abgebrochen.[/yellow]")
+            return
+        console.print(f"\n[green]Gewaehlt:[/green] {md_file.name}\n")
+        convert_html_tables_in_file(md_file)
+        return
 
     # Startverzeichnis bestimmen (Standard: aktuelles Arbeitsverzeichnis)
     start_dir = Path.cwd()
