@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-v1.7.4 - OCR zu Markdown Konverter mit TUI-Dateiauswahl
+v1.7.5 - OCR zu Markdown Konverter mit TUI-Dateiauswahl
 
 Verwendet ein LLM (via LM Studio) um Bilddateien und PDFs zu OCR-lesen
 und als Markdown mit Tabellen-Formatierung auszugeben.
@@ -234,6 +234,7 @@ Tabellen-Regeln:
 - Verbundene Zellen: Inhalt in die erste Spalte, restliche leer
 - Trennzeile nach der Kopfzeile: |---|---|---| (Mindestens 3 Bindestriche pro Spalte)
 - Tabellen MUESSEN als Markdown mit | Spalte | Format geschrieben werden
+- VERBOTEN: Keine HTML-Tabellen (<table>, <tr>, <td>, <th>, <thead>, <tbody>). ABSOLUT KEINE HTML-Tags fuer Tabellen. Verwende ausschliesslich Markdown-Syntax mit Pipe-Zeichen (|)
 
 ## Handschrift
 - Erkenne handschriftliche Notizen, Unterschriften, Randbemerkungen und Stempeltext
@@ -265,6 +266,8 @@ DEINE AUFGABE:
 4. Formatiere ALLE Tabellen als Markdown-Tabellen mit | Spalte | Format und korrekter Trennzeile |---|---|
 5. Aendere keinen Inhalt, keine Woerter und keine Zahlen - nur Korrekturen die eindeutig OCR-Fehler sind
 6. Erhalte die Tabellenstruktur: gleiche Anzahl Spalten pro Zeile, keine Zeile weglassen
+7. Wandle alle HTML-Tabellen (<table>, <tr>, <td>, <th>, <thead>, <tbody>) in Markdown-Tabellen um
+8. VERBOTEN: Keine HTML-Tabellen in der Ausgabe. Verwende ausschliesslich Markdown-Syntax mit Pipe-Zeichen (|)
 
 AUSGABE: Nur den verbesserten Text. Keine Kommentare, keine Erklaerung was du geaendert hast."""
 
@@ -1039,7 +1042,7 @@ def insert_text_into_pdf(pdf_path: Path, markdown_text: str) -> None:
 
 def main():
     """Hauptfunktion: Dateiauswahl, OCR-Verarbeitung, Speichern."""
-    console.print("\n[bold cyan]OCR to Markdown Tool v1.7.4[/bold cyan]\n")
+    console.print("\n[bold cyan]OCR to Markdown Tool v1.7.5[/bold cyan]\n")
 
     # Kommandozeilenargumente parsen: -d aktiviert Markdown-Nachbearbeitung
     debug_mode = "-d" in sys.argv
