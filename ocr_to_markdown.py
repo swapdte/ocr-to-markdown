@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-v1.8.0 - OCR zu Markdown Konverter mit TUI-Dateiauswahl
+v1.8.1 - OCR zu Markdown Konverter mit TUI-Dateiauswahl
 
 Verwendet ein LLM (via LM Studio) um Bilddateien und PDFs zu OCR-lesen
 und als Markdown mit Tabellen-Formatierung auszugeben.
@@ -17,6 +17,7 @@ Funktionen:
 - Fortschrittsanzeige mit rich
 - Temporaere OCR-Dateien werden automatisch geloescht
 - HTML-zu-Markdown Tabellenkonvertierung in .md Dateien (-t Flag)
+- Frontmatter mit UUID in jeder erstellten .md Datei
 """
 
 import sys
@@ -24,6 +25,8 @@ import io
 import re
 import subprocess
 import tempfile
+import uuid
+from datetime import datetime
 from pathlib import Path
 
 # TUI und Progress-Anzeige
@@ -248,11 +251,16 @@ Tabellen-Regeln:
 - Kein Absatz, keine Zeile, kein Wort darf im Original vorhanden aber im Ergebnis fehlen
 - Ueberpruefe besonders: Zahlen in Tabellen, IBAN-Zeichenketten, Bruchzahlen, hochgestellte Zeichen (m2, m3, etc.)
 - Wenn Text unleserlich ist: Gib die bestmoegliche Interpretation mit [?] markiert an. Lass NICHTS komplett weg.
+- Zaehle nach der Ausgabe alle Zeichen im Original und vergleiche mit deiner Ausgabe. Fehlende Zeichen sind ein FEHLER.
+- Pruefe ECKEN und RAENDER: Oft stehen dort wichtige Informationen (Stempel, Wasserzeichen, Fussnoten)
+- Pruefe ZWISCHENRAEUME: Kleingedrucktes, Fussnotenzeilen, Seitenzahlen
+- PRUEFE NOCHMALS: Scanne dein Ergebnis von OBEN nach UNTEN und vergleiche zeichenweise mit dem Original
 
 ## WICHTIG
 - Beginne sofort mit dem ersten erkannten Zeichen. Keine Einleitung.
 - Beende mit dem letzten erkannten Zeichen. Keine Zusammenfassung.
-- Kein einziges Zeichen im Original darf im Ergebnis fehlen."""
+- Kein einziges Zeichen im Original darf im Ergebnis fehlen.
+- WIRKHOUUNGS-PRUEFUNG: Wenn das Original 100 Zeichen hat, muss deine Ausgabe mindestens genauso viele Zeichen enthalten. Fehlende Zeichen bedeuten FEHLGESCHLAGENE OCR."""
 
 # Fallback-Prompt fuer schwierige Faelle
 FALLBACK_PROMPT = """Gib den gesamten sichtbaren Text aus. Keine Formatierung."""
@@ -288,6 +296,37 @@ Regeln:
 7. VERBOTEN: Keine HTML-Tags fuer Tabellen in der Ausgabe
 
 AUSGABE: Den gesamten Text mit allen Tabellen als Markdown formatiert. Keine Kommentare, keine Erklaerung."""
+
+# Frontmatter-Template fuer erstellte .md Dateien
+FRONTMATTER_TEMPLATE = """---
+id: {uuid}
+title: {title}
+tags:
+  - {tags}
+pinned: false
+created: {created}
+modified: {modified}
+---\n"""
+
+
+def generate_frontmatter(title: str, tag: str = "ocr") -> str:
+    """Erstelle Frontmatter-Block mit UUID und Zeitstempel.
+
+    Args:
+        title: Der Titel der Datei (wird auch als Ueberschrift verwendet).
+        tag: Der Tag fuer die Datei (Standard: "ocr").
+
+    Returns:
+        Der formatierte Frontmatter-String.
+    """
+    now = datetime.now().isoformat()
+    return FRONTMATTER_TEMPLATE.format(
+        uuid=str(uuid.uuid4()),
+        title=title,
+        tags=tag,
+        created=now,
+        modified=now,
+    )
 
 
 def get_files_in_directory(directory: Path) -> list[Path]:
@@ -917,14 +956,14 @@ def process_image_file(image_path: Path) -> tuple[str, str]:
 
 
 def save_markdown(file_path: Path, language: str, content: str) -> Path:
-    """Speichere Ergebnis als reine Markdown-Datei.
+    """Speichere Ergebnis als Markdown-Datei mit Frontmatter.
 
     Die Ausgabedatei wird im aktuellen Arbeitsverzeichnis erstellt,
-    nicht im Verzeichnis der Quelldatei. Enthaelt nur den OCR-Text,
-    keine Kommentare oder Metadaten.
+    nicht im Verzeichnis der Quelldatei. Beginnt mit Frontmatter
+    inklusive UUID, Titel und Zeitstempel.
 
     Args:
-        file_path: Pfad zur Quelldatei (fuer den Namen).
+        file_path: Pfad zur Quelldatei (fuer den Namen und Titel).
         language: Erkannte Sprache (wird nur auf der Konsole angezeigt).
         content: Der OCR-Text als Markdown.
 
@@ -934,7 +973,11 @@ def save_markdown(file_path: Path, language: str, content: str) -> Path:
     output_name = f"{file_path.stem}-OCR.md"
     output_path = Path.cwd() / output_name
 
-    output_path.write_text(content, encoding="utf-8")
+    title = file_path.stem
+    frontmatter = generate_frontmatter(title)
+    full_content = frontmatter + "\n" + content
+
+    output_path.write_text(full_content, encoding="utf-8")
 
     return output_path
 
@@ -1265,7 +1308,7 @@ def convert_html_tables_in_file(md_path: Path) -> None:
 
 def main():
     """Hauptfunktion: Dateiauswahl, OCR-Verarbeitung, Speichern."""
-    console.print("\n[bold cyan]OCR to Markdown Tool v1.8.0[/bold cyan]\n")
+    console.print("\n[bold cyan]OCR to Markdown Tool v1.8.1[/bold cyan]\n")
 
     table_mode = "-t" in sys.argv
     debug_mode = "-d" in sys.argv
