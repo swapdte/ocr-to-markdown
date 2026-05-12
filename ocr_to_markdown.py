@@ -260,7 +260,7 @@ Tabellen-Regeln:
 - Beginne sofort mit dem ersten erkannten Zeichen. Keine Einleitung.
 - Beende mit dem letzten erkannten Zeichen. Keine Zusammenfassung.
 - Kein einziges Zeichen im Original darf im Ergebnis fehlen.
-- WIRKHOUUNGS-PRUEFUNG: Wenn das Original 100 Zeichen hat, muss deine Ausgabe mindestens genauso viele Zeichen enthalten. Fehlende Zeichen bedeuten FEHLGESCHLAGENE OCR."""
+- WIRKUNGS-PRUEFUNG: Wenn das Original 100 Zeichen hat, muss deine Ausgabe mindestens genauso viele Zeichen enthalten. Fehlende Zeichen bedeuten FEHLGESCHLAGENE OCR."""
 
 # Fallback-Prompt fuer schwierige Faelle
 FALLBACK_PROMPT = """Gib den gesamten sichtbaren Text aus. Keine Formatierung."""
@@ -1257,7 +1257,9 @@ def convert_html_tables_in_file(md_path: Path) -> None:
         TextColumn("[progress.description]{task.description}"),
         console=console,
     ) as progress:
-        task = progress.add_task("[cyan]Konvertiere HTML-Tabellen zu Markdown...[/cyan]")
+        task = progress.add_task(
+            "[cyan]Konvertiere HTML-Tabellen zu Markdown...[/cyan]"
+        )
 
         try:
             client = lms.Client(api_host=LMSTUDIO_HOST)
@@ -1283,7 +1285,7 @@ def convert_html_tables_in_file(md_path: Path) -> None:
             # falls das Modell trotzdem ```markdown verwendet
             converted = converted.strip()
             if converted.startswith("```markdown"):
-                converted = converted[len("```markdown"):].strip()
+                converted = converted[len("```markdown") :].strip()
             if converted.startswith("```"):
                 converted = converted[3:].strip()
             if converted.endswith("```"):
@@ -1295,7 +1297,9 @@ def convert_html_tables_in_file(md_path: Path) -> None:
                 task,
                 description=f"[green]Fertig: {md_path.name} aktualisiert[/green]",
             )
-            console.print(f"\n[bold green]Fertig![/bold green] {md_path.name} wurde aktualisiert.")
+            console.print(
+                f"\n[bold green]Fertig![/bold green] {md_path.name} wurde aktualisiert."
+            )
 
         except Exception as e:
             progress.update(
