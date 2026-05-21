@@ -1,6 +1,6 @@
 [project]
 name = "glm-ocr-skripte"
-version = "1.8.1"
+version = "1.8.2"
 description = "OCR zu Markdown Konverter mit TUI-Dateiauswahl"
 requires-python = ">=3.10"
 dependencies = [

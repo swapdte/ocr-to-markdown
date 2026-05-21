@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-v1.8.1 - OCR zu Markdown Konverter mit TUI-Dateiauswahl
+v1.8.2 - OCR zu Markdown Konverter mit TUI-Dateiauswahl
 
 Verwendet ein LLM (via LM Studio) um Bilddateien und PDFs zu OCR-lesen
 und als Markdown mit Tabellen-Formatierung auszugeben.
@@ -281,7 +281,7 @@ DEINE AUFGABE:
 AUSGABE: Nur den verbesserten Text. Keine Kommentare, keine Erklaerung was du geaendert hast."""
 
 # Modell fuer die Tabellenkonvertierung (-t Flag)
-TABLE_CONVERSION_MODEL = "gemma-4-e4b-it"
+TABLE_CONVERSION_MODEL = "qwen3.5-9b"
 
 # Prompt fuer die HTML-zu-Markdown Tabellenkonvertierung
 HTML_TO_MD_TABLE_PROMPT = """Wandle alle HTML-Tabellen in dem folgenden Text in Markdown-Tabellen um.
