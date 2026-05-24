@@ -1,4 +1,4 @@
-# glm-ocr-skripte
+# ocr-to-markdown
 
 Python-CLI-Tool zur Konvertierung von Bild- und PDF-Dateien in formatiertes Markdown mittels lokaler OCR (LM Studio).
 
@@ -35,7 +35,7 @@ Python-CLI-Tool zur Konvertierung von Bild- und PDF-Dateien in formatiertes Mark
 
 ```bash
 # Projekt klonen
-git clone https://marckerkmann.de/forgejo/marc/ocr-to-markdown.git
+git clone https://github.com/swapdte/ocr-to-markdown.git
 cd ocr-to-markdown
 
 # Als uv Tool installieren
@@ -55,7 +55,7 @@ uv tool install --force .
 ### Deinstallation
 
 ```bash
-uv tool uninstall glm-ocr-skripte
+uv tool uninstall ocr-to-markdown
 ```
 
 ## Nutzung
