@@ -42,7 +42,7 @@ wheels = [
 ]
 
 [[package]]
-name = "glm-ocr-skripte"
+name = "ocr-to-markdown"
 version = "1.8.2"
 source = { virtual = "." }
 dependencies = [

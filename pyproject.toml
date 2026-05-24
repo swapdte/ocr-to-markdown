@@ -1,5 +1,5 @@
 [project]
-name = "glm-ocr-skripte"
+name = "ocr-to-markdown"
 version = "1.8.2"
 description = "OCR zu Markdown Konverter mit TUI-Dateiauswahl"
 requires-python = ">=3.10"

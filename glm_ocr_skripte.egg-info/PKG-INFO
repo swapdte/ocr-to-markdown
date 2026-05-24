@@ -1,6 +1,6 @@
 Metadata-Version: 2.4
-Name: glm-ocr-skripte
-Version: 1.7.4
+Name: ocr-to-markdown
+Version: 1.8.2
 Summary: OCR zu Markdown Konverter mit TUI-Dateiauswahl
 Requires-Python: >=3.10
 Requires-Dist: questionary
