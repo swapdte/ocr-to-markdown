@@ -1,3 +1,0 @@
-172:Pruefe das Bild ZWEIMAL: zuerst alle horizontalen Texte lesen, dann gezielt nach gedrehten Elementen suchen.
-176:1. ERKENNUNGSKOMPLETT (ZWEI-PASS-STRATEGIE):
-252:- Lies das Bild ZWEIMAL: erster Pass fuer horizontalen Text, zweiter Pass fuer gedrehte/vertikale Elemente

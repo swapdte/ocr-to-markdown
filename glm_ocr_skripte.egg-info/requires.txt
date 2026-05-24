@@ -1,5 +1,0 @@
-questionary
-rich
-lmstudio
-pymupdf
-pillow

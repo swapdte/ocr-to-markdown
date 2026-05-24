@@ -1,8 +1,0 @@
-ocr_to_markdown.py
-pyproject.toml
-glm_ocr_skripte.egg-info/PKG-INFO
-glm_ocr_skripte.egg-info/SOURCES.txt
-glm_ocr_skripte.egg-info/dependency_links.txt
-glm_ocr_skripte.egg-info/entry_points.txt
-glm_ocr_skripte.egg-info/requires.txt
-glm_ocr_skripte.egg-info/top_level.txt
