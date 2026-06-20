@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-v1.14.1 - OCR zu Markdown Konverter mit TUI-Dateiauswahl
+v1.15.0 - OCR zu Markdown Konverter mit TUI-Dateiauswahl
 
 Verwendet ein LLM (via LM Studio) um Bilddateien und PDFs zu OCR-lesen
 und als Markdown mit Tabellen-Formatierung auszugeben.
@@ -113,14 +113,16 @@ NANONETS_JINJA_TEMPLATE = """{%- for message in messages -%}
 {%- endif -%}"""
 
 # Modell-spezifische Konfigurationen (Prediction-Parameter)
-# nanonets-ocr-s: Offizielle Parameter aus der Modell-Doku + Jinja-Template
+# nanonets-ocr-s: Parameter aus ocr.preset.json + Jinja-Template
 MODEL_CONFIGS = {
     "nanonets-ocr-s": {
-        "temperature": 0.0,
-        "repeatPenalty": 1.0,
-        "minPSampling": 0.01,
+        "temperature": 0,
+        "repeatPenalty": 1.05,
+        "minPSampling": 0,
+        "topPSampling": 1,
+        "topKSampling": -1,
+        "maxTokens": 1500,
         "stopStrings": ["<|im_start|>", "<|im_end|>"],
-        "maxTokens": 2048,
         "promptTemplate": {
             "type": "jinja",
             "stopStrings": ["<|im_start|>", "<|im_end|>"],
@@ -255,12 +257,11 @@ PROMPT_ARTEFACTS = [
     "ich erkenne folgenden",
 ]
 
-# System-Prompt für OCR-Modelle (offizieller Prompt aus der Nanonets-OCR-s Doku)
-SYSTEM_PROMPT = "You are a helpful assistant."
+# System-Prompt für OCR-Modelle
+SYSTEM_PROMPT = "You are a precise OCR engine."
 
 # Prompt für OCR von Dokumentenseiten
-# Offizieller Prompt aus der Nanonets-OCR-s Dokumentation
-OCR_PROMPT = """Extract the text from the above document as if you were reading it naturally. Return the tables in html format. Return the equations in LaTeX representation. If there is an image in the document and image caption is not present, add a small description of the image inside the <img></img> tag; otherwise, add the image caption inside <img></img>. Watermarks should be wrapped in brackets. Ex: <watermark>OFFICIAL COPY</watermark>. Page numbers should be wrapped in brackets. Ex: <page_number>14</page_number> or <page_number>9/22</page_number>. Prefer using ☐ and ☑ for check boxes."""
+OCR_PROMPT = "Extract the text from the above document as if you were reading it naturally. Return the all text and tables in markdown format."
 
 # Fallback-Prompt für schwierige Fälle
 FALLBACK_PROMPT = """Gib den gesamten sichtbaren Text aus. Keine Formatierung."""

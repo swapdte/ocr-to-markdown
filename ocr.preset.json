@@ -1,0 +1,56 @@
+{
+  "identifier": "@local:ocr",
+  "name": "ocr",
+  "changed": true,
+  "operation": {
+    "fields": [
+      {
+        "key": "llm.prediction.systemPrompt",
+        "value": "You are a precise OCR engine."
+      },
+      {
+        "key": "llm.prediction.repeatPenalty",
+        "value": {
+          "checked": true,
+          "value": 1.05
+        }
+      },
+      {
+        "key": "llm.prediction.llama.cpuThreads",
+        "value": 4
+      },
+      {
+        "key": "llm.prediction.maxPredictedTokens",
+        "value": {
+          "checked": true,
+          "value": 1500
+        }
+      },
+      {
+        "key": "llm.prediction.topPSampling",
+        "value": {
+          "checked": true,
+          "value": 1
+        }
+      },
+      {
+        "key": "llm.prediction.temperature",
+        "value": 0
+      },
+      {
+        "key": "llm.prediction.topKSampling",
+        "value": -1
+      },
+      {
+        "key": "llm.prediction.minPSampling",
+        "value": {
+          "checked": true,
+          "value": 0
+        }
+      }
+    ]
+  },
+  "load": {
+    "fields": []
+  }
+}
