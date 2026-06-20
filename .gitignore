@@ -43,3 +43,7 @@ htmlcov/
 
 # Model config files
 *.gguf.json
+
+# AI agent configs
+AGENTS.md
+.claude/
