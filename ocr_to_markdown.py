@@ -10,7 +10,7 @@ Funktionen:
 - Unterstuetzt PNG, JPG, JPEG und PDF Dateien
 - PDF-only Modelle werden bei Bild-Eingabe automatisch uebersprungen
 - PDFs werden direkt an PDF-only Modelle gesendet (ohne pdftoppm-Konvertierung)
-- Modell-spezifische Prompts (PaddleOCR-VL nutzt "OCR:" statt langem Prompt)
+- Modell-spezifische Prompts und Temperatur-Einstellungen
 - Automatische Seiten-Erkennung bei PDFs (via pdftoppm)
 - Automatische Spracherkennung (Deutsch, Englisch, Franzoesisch, Spanisch)
 - Markdown-Formatierung mit Tabellen, Listen, Fett/Kursiv
@@ -67,7 +67,7 @@ LMSTUDIO_CONTEXT_LENGTH = 8000  # Kontextfenster in Tokens
 # Bevorzugte OCR-Modelle in Prioritaetsreihenfolge
 # Das erste verfuegbare Modell aus dieser Liste wird verwendet
 MODEL_PREFERENCES = [
-    "paddlepaddle/paddleocr-vl-1.6-gguf/paddleocr-vl-1.6-gguf.gguf",
+    "glm-ocr",
     "allenai/olmocr-2-7b",
     "gemma-4-e4b-it",
     "gemma-4-e2b-it",
@@ -77,19 +77,18 @@ MODEL_PREFERENCES = [
 # Modelle die nur PDF-Input verarbeiten koennen (keine Bilder)
 # Diese werden bei Bild-Eingabe automatisch uebersprungen
 PDF_ONLY_MODELS = {
-    "paddlepaddle/paddleocr-vl-1.6-gguf/paddleocr-vl-1.6-gguf.gguf",
+    "glm-ocr",
 }
 
 # Modell-spezifische Prompts
-# PaddleOCR-VL erwartet kurze Task-Prompts wie "OCR:", nicht lange Anweisungen
+# (glm-ocr nutzt den generischen OCR_PROMPT, keine Sondereinstellung noetig)
 MODEL_PROMPTS = {
-    "paddlepaddle/paddleocr-vl-1.6-gguf/paddleocr-vl-1.6-gguf.gguf": "Please extract all text and tables from this German document image exactly as they appear.",
 }
 
 # Modell-spezifische Temperatur-Einstellungen
-# PaddleOCR-VL funktioniert am besten mit Temperatur 0 (deterministische Ausgabe)
+# glm-ocr funktioniert am besten mit Temperatur 0 (deterministische Ausgabe)
 MODEL_TEMPERATURES = {
-    "paddlepaddle/paddleocr-vl-1.6-gguf/paddleocr-vl-1.6-gguf.gguf": 0.0,
+    "glm-ocr": 0.0,
 }
 
 # Woerter fuer automatische Spracherkennung
@@ -811,7 +810,7 @@ def ocr_page_sync(image_bytes: bytes, page_num: int, is_pdf: bool = False) -> tu
                     raise
 
         # Falls Ergebnis leer oder sehr kurz: Fallback-Prompt versuchen
-        # Bei PaddleOCR-VL: Kurz-Prompt als Fallback, sonst den generischen Fallback
+        # Modell-spezifischer Kurz-Prompt als Fallback, sonst der generische Fallback
         if not text or not text.strip() or len(text.strip()) < 10:
             fallback = MODEL_PROMPTS.get(model_name, FALLBACK_PROMPT)
             chat = lms.Chat(fallback)
@@ -904,7 +903,7 @@ def process_pdf_with_direct_model(pdf_path: Path) -> tuple[str, str]:
     """Verarbeite ein PDF direkt mit einem PDF-faehigen Modell (ohne pdftoppm).
 
     Sendet das gesamte PDF an ein Modell das PDF-Input direkt verarbeiten kann
-    (z.B. paddleocr-vl). Keine Konvertierung zu PNG noetig.
+    (z.B. glm-ocr). Keine Konvertierung zu PNG noetig.
 
     Args:
         pdf_path: Pfad zur PDF-Datei.
