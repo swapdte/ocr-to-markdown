@@ -4,10 +4,10 @@ version = "1.18.0"
 description = "OCR zu Markdown Konverter mit TUI-Dateiauswahl"
 requires-python = ">=3.10"
 authors = [
-    { name = "Marc Kerkmann", email = "marc@kerkmann.dev" },
+    { name = "Marc Kerkmann" },
 ]
 maintainers = [
-    { name = "opencode", email = "opencode@ai" },
+    { name = "opencode" },
 ]
 license = { text = "MIT" }
 dependencies = [

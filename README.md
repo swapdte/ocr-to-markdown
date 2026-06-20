@@ -188,5 +188,5 @@ Dieses Projekt steht unter der [MIT-Lizenz](LICENSE).
 
 ## Autoren
 
-- **Marc Kerkmann** — [marc@kerkmann.dev](mailto:marc@kerkmann.dev)
+- **Marc Kerkmann**
 - **opencode** — Co-Autor
