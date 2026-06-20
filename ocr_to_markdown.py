@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-v1.8.2 - OCR zu Markdown Konverter mit TUI-Dateiauswahl
+v1.9.0 - OCR zu Markdown Konverter mit TUI-Dateiauswahl
 
 Verwendet ein LLM (via LM Studio) um Bilddateien und PDFs zu OCR-lesen
 und als Markdown mit Tabellen-Formatierung auszugeben.
@@ -8,6 +8,7 @@ Der OCR-Text wird nachbearbeitet fuer bessere Formatierung und Rechtschreibung.
 
 Funktionen:
 - Unterstuetzt PNG, JPG, JPEG und PDF Dateien
+- PDF-only Modelle werden bei Bild-Eingabe automatisch uebersprungen
 - Automatische Seiten-Erkennung bei PDFs (via pdftoppm)
 - Automatische Spracherkennung (Deutsch, Englisch, Franzoesisch, Spanisch)
 - Markdown-Formatierung mit Tabellen, Listen, Fett/Kursiv
@@ -64,11 +65,18 @@ LMSTUDIO_CONTEXT_LENGTH = 8000  # Kontextfenster in Tokens
 # Bevorzugte OCR-Modelle in Prioritaetsreihenfolge
 # Das erste verfuegbare Modell aus dieser Liste wird verwendet
 MODEL_PREFERENCES = [
+    "paddlepaddle/paddleocr-vl-1.6-gguf/paddleocr-vl-1.6-gguf.gguf",
     "allenai/olmocr-2-7b",
     "gemma-4-e4b-it",
     "gemma-4-e2b-it",
     "qwen3.5-9b",
 ]
+
+# Modelle die nur PDF-Input verarbeiten koennen (keine Bilder)
+# Diese werden bei Bild-Eingabe automatisch uebersprungen
+PDF_ONLY_MODELS = {
+    "paddlepaddle/paddleocr-vl-1.6-gguf/paddleocr-vl-1.6-gguf.gguf",
+}
 
 # Woerter fuer automatische Spracherkennung
 LANGUAGE_PATTERNS = {
@@ -670,16 +678,18 @@ def filter_short_lines(text: str, min_length: int = MIN_LINE_LENGTH) -> str:
     return "\n".join(filtered)
 
 
-def select_ocr_model(client: lms.Client) -> str:
+def select_ocr_model(client: lms.Client, is_pdf: bool = False) -> str:
     """Waehle das beste verfuegbare OCR-Modell und entlade es bei Bedarf.
 
     Prueft welche der bevorzugten Modelle (MODEL_PREFERENCES) in LM Studio
     heruntergeladen sind und waehlt das Modell mit hoechster Prioritaet.
+    PDF-only Modelle werden uebersprungen wenn is_pdf=False (Bilder).
     Falls das Modell bereits geladen ist, wird es zuerst entladen um einen
     sauberen OCR-Durchlauf zu garantieren.
 
     Args:
         client: Verbundener LM Studio Client.
+        is_pdf: True wenn PDF verarbeitet wird (PDF-only Modelle erlaubt).
 
     Returns:
         Die Modellkennung des ausgewaehlten Modells.
@@ -692,6 +702,9 @@ def select_ocr_model(client: lms.Client) -> str:
     selected = None
     # Bevorzugtes Modell in Prioritaetsreihenfolge suchen
     for preferred in MODEL_PREFERENCES:
+        # PDF-only Modelle ueberspringen bei Bild-Eingabe
+        if not is_pdf and preferred in PDF_ONLY_MODELS:
+            continue
         for avail_path in available:
             if preferred.lower() in avail_path:
                 selected = preferred
@@ -723,7 +736,7 @@ def select_ocr_model(client: lms.Client) -> str:
     return selected
 
 
-def ocr_page_sync(image_bytes: bytes, page_num: int) -> tuple[str, str]:
+def ocr_page_sync(image_bytes: bytes, page_num: int, is_pdf: bool = False) -> tuple[str, str]:
     """OCR mit Markdown-Formatierung und Post-Processing.
 
     Fuehrt die OCR auf einem Bild durch, formatiert das Ergebnis
@@ -731,7 +744,8 @@ def ocr_page_sync(image_bytes: bytes, page_num: int) -> tuple[str, str]:
 
     Args:
         image_bytes: Die Bilddaten als Bytes.
-        page_num: Die Seitennummer ( fuer Fortschrittsanzeige).
+        page_num: Die Seitennummer (fuer Fortschrittsanzeige).
+        is_pdf: True wenn PDF verarbeitet wird (PDF-only Modelle erlaubt).
 
     Returns:
         Ein Tuple aus (erkannte_sprache, text_inhalt).
@@ -748,7 +762,7 @@ def ocr_page_sync(image_bytes: bytes, page_num: int) -> tuple[str, str]:
         # Verbindung zum lokalen LM Studio Server herstellen
         client = lms.Client(api_host=LMSTUDIO_HOST)
         # Beste verfuegbares Modell auswaehlen (Prioritaetsliste)
-        model_name = select_ocr_model(client)
+        model_name = select_ocr_model(client, is_pdf=is_pdf)
         model = client.llm.model(
             model_name,
             ttl=LMSTUDIO_TTL,
@@ -906,7 +920,7 @@ def process_pdf(pdf_path: Path) -> tuple[str, str]:
                 description=f"[yellow]Seite {page_num + 1}: OCR laeuft...[/yellow]",
             )
 
-            language, content = ocr_page_sync(img_bytes, page_num + 1)
+            language, content = ocr_page_sync(img_bytes, page_num + 1, is_pdf=True)
 
             # Erste erkannte Sprache merken
             if page_num == 0:
@@ -1004,7 +1018,7 @@ def refine_markdown(content: str) -> str:
 
         try:
             client = lms.Client(api_host=LMSTUDIO_HOST)
-            model_name = select_ocr_model(client)
+            model_name = select_ocr_model(client, is_pdf=False)
             model = client.llm.model(
                 model_name,
                 ttl=LMSTUDIO_TTL,
@@ -1312,7 +1326,7 @@ def convert_html_tables_in_file(md_path: Path) -> None:
 
 def main():
     """Hauptfunktion: Dateiauswahl, OCR-Verarbeitung, Speichern."""
-    console.print("\n[bold cyan]OCR to Markdown Tool v1.8.2[/bold cyan]\n")
+    console.print("\n[bold cyan]OCR to Markdown Tool v1.9.0[/bold cyan]\n")
 
     table_mode = "-t" in sys.argv
     debug_mode = "-d" in sys.argv
