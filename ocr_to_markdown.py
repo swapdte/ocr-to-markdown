@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-v1.16.0 - OCR zu Markdown Konverter mit TUI-Dateiauswahl
+v1.17.0 - OCR zu Markdown Konverter mit TUI-Dateiauswahl
 
 Verwendet ein LLM (via LM Studio) um Bilddateien und PDFs zu OCR-lesen
 und als Markdown mit Tabellen-Formatierung auszugeben.
@@ -86,12 +86,14 @@ PDF_ONLY_MODELS = {
 MODEL_PROMPTS = {
 }
 
-# Modell-spezifische Load-Konfigurationen (Seed, etc.)
+# Modell-spezifische Load-Konfigurationen (Seed, Batch-Size, etc.)
 # Seed wird beim Laden des Modells gesetzt, nicht bei der Vorhersage
 MODEL_LOAD_CONFIGS = {
     "nanonets-ocr-s": {
         "contextLength": LMSTUDIO_CONTEXT_LENGTH,
         "seed": LMSTUDIO_SEED,
+        "evalBatchSize": 2048,
+        "numParallelSessions": 4,
     },
 }
 
@@ -155,7 +157,8 @@ NANONETS_JINJA_TEMPLATE = """{#- Copyright 2025-present the Unsloth team. All ri
 {#- Licensed under the Apache License, Version 2.0 (the "License") #}"""
 
 # Modell-spezifische Konfigurationen (Prediction-Parameter)
-# nanonets-ocr-s: Parameter aus ocr.preset.json + Jinja-Template
+# nanonets-ocr-s: Parameter aus Nanonets-OCR-s-Q4_K_S.gguf.json + Jinja-Template
+# maxPredictedTokens ist deaktiviert (checked: false) — kein Token-Limit
 MODEL_CONFIGS = {
     "nanonets-ocr-s": {
         "temperature": 0,
@@ -163,7 +166,6 @@ MODEL_CONFIGS = {
         "minPSampling": 0,
         "topPSampling": 1,
         "topKSampling": -1,
-        "maxTokens": 1500,
         "stopStrings": ["<|im_start|>", "<|im_end|>"],
         "promptTemplate": {
             "type": "jinja",

@@ -40,3 +40,6 @@ htmlcov/
 
 # Test PDFs
 *.pdf
+
+# Model config files
+*.gguf.json
