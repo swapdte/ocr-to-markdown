@@ -1,25 +1,26 @@
 #!/usr/bin/env python3
+# -*- coding: utf-8 -*-
 """
-v1.11.0 - OCR zu Markdown Konverter mit TUI-Dateiauswahl
+v1.12.0 - OCR zu Markdown Konverter mit TUI-Dateiauswahl
 
 Verwendet ein LLM (via LM Studio) um Bilddateien und PDFs zu OCR-lesen
 und als Markdown mit Tabellen-Formatierung auszugeben.
-Der OCR-Text wird nachbearbeitet fuer bessere Formatierung und Rechtschreibung.
+Der OCR-Text wird nachbearbeitet für bessere Formatierung und Rechtschreibung.
 
 Funktionen:
-- Unterstuetzt PNG, JPG, JPEG und PDF Dateien
-- PDF-only Modelle werden bei Bild-Eingabe automatisch uebersprungen
+- Unterstützt PNG, JPG, JPEG und PDF Dateien
+- PDF-only Modelle werden bei Bild-Eingabe automatisch übersprungen
 - PDFs werden direkt an PDF-only Modelle gesendet (ohne pdftoppm-Konvertierung)
 - Modell-spezifische Konfigurationen (Temperatur, Top-P, Repeat Penalty, Max Tokens)
-- System-Prompt fuer OCR-Modelle
+- System-Prompt für OCR-Modelle
 - Automatische Seiten-Erkennung bei PDFs (via pdftoppm)
-- Automatische Spracherkennung (Deutsch, Englisch, Franzoesisch, Spanisch)
+- Automatische Spracherkennung (Deutsch, Englisch, Französisch, Spanisch)
 - Markdown-Formatierung mit Tabellen, Listen, Fett/Kursiv
 - Nachbearbeitung: Rechtschreibung und Formatierung werden verbessert
-- OCR-Text wird bei PDF-Input auch in die Quell-PDF eingefuegt
+- OCR-Text wird bei PDF-Input auch in die Quell-PDF eingefügt
 - TUI-Dateiauswahl mit questionary
 - Fortschrittsanzeige mit rich
-- Temporaere OCR-Dateien werden automatisch geloescht
+- Temporäre OCR-Dateien werden automatisch gelöscht
 - HTML-zu-Markdown Tabellenkonvertierung in .md Dateien (-t Flag)
 - Frontmatter mit UUID in jeder erstellten .md Datei
 """
@@ -50,22 +51,22 @@ console = Console()
 # Erlaubte Dateiformate
 ALLOWED_EXTENSIONS = {".png", ".jpg", ".jpeg", ".pdf"}
 
-# Maximale Bildgroesse - nur resize wenn groesser
+# Maximale Bildgröße - nur resize wenn größer
 MAX_IMAGE_SIZE = 1024
 
-# Minimale Zeilenlaenge - kuerzere Zeilen werden ignoriert
-# Werte von 2 aufwaerts: 2 erlaubt kurze Tabellenzellen, aber filtert Rauschen
+# Minimale Zeilenlänge - kürzere Zeilen werden ignoriert
+# Werte von 2 aufwärts: 2 erlaubt kurze Tabellenzellen, aber filtert Rauschen
 MIN_LINE_LENGTH = 2
 
-# Minimale DPI fuer PDF-Rendering (bessere Qualitaet bei gefalteten Seiten)
+# Minimale DPI für PDF-Rendering (bessere Qualität bei gefalteten Seiten)
 MIN_PDF_DPI = 50
 
 # LM Studio Konfiguration
 LMSTUDIO_HOST = "127.0.0.1:1234"
 LMSTUDIO_CONTEXT_LENGTH = 20000  # Kontextfenster in Tokens
 
-# Bevorzugte OCR-Modelle in Prioritaetsreihenfolge
-# Das erste verfuegbare Modell aus dieser Liste wird verwendet
+# Bevorzugte OCR-Modelle in Prioritätsreihenfolge
+# Das erste verfügbare Modell aus dieser Liste wird verwendet
 MODEL_PREFERENCES = [
     "nanonets-ocr-s",
     "allenai/olmocr-2-7b",
@@ -74,14 +75,14 @@ MODEL_PREFERENCES = [
     "qwen3.5-9b",
 ]
 
-# Modelle die nur PDF-Input verarbeiten koennen (keine Bilder)
-# Diese werden bei Bild-Eingabe automatisch uebersprungen
+# Modelle die nur PDF-Input verarbeiten können (keine Bilder)
+# Diese werden bei Bild-Eingabe automatisch übersprungen
 PDF_ONLY_MODELS = {
     "nanonets-ocr-s",
 }
 
 # Modell-spezifische Prompts
-# (nanonets-ocr-s nutzt den generischen OCR_PROMPT, keine Sondereinstellung noetig)
+# (nanonets-ocr-s nutzt den generischen OCR_PROMPT, keine Sondereinstellung nötig)
 MODEL_PROMPTS = {
 }
 
@@ -96,7 +97,7 @@ MODEL_CONFIGS = {
     },
 }
 
-# Woerter fuer automatische Spracherkennung
+# Wörter für automatische Spracherkennung
 LANGUAGE_PATTERNS = {
     "Deutsch": [
         "der",
@@ -108,7 +109,7 @@ LANGUAGE_PATTERNS = {
         "eine",
         "nicht",
         "auf",
-        "fuer",
+        "für",
         "mit",
         "von",
         "zu",
@@ -142,7 +143,7 @@ LANGUAGE_PATTERNS = {
         "by",
         "from",
     ],
-    "Franzoesisch": [
+    "Französisch": [
         "le",
         "la",
         "les",
@@ -203,7 +204,7 @@ PROMPT_ARTEFACTS = [
     "format als",
     "inline-html-tabelle",
     "zusammenfassung:",
-    "erklaerung:",
+    "erklärung:",
     "hier ist der text:",
     "hier ist der erkannte",
     "extrahierter text:",
@@ -220,113 +221,49 @@ PROMPT_ARTEFACTS = [
     "ich erkenne folgenden",
 ]
 
-# System-Prompt fuer OCR-Modelle
-SYSTEM_PROMPT = "You are a precise OCR engine."
+# System-Prompt für OCR-Modelle (offizieller Prompt aus der Nanonets-OCR-s Doku)
+SYSTEM_PROMPT = "You are a helpful assistant."
 
-# Prompt fuer OCR von DIN A4 Dokumenten (Briefe und Rechnungen)
-# Deckt komplexe Formatierungen, Tabellen, Handschrift und QR-Codes ab
-OCR_PROMPT = """Du bist ein Praezisions-OCR-Scanner. Deine Aufgabe ist es, dieses Bild ZEICHEN FUER ZEICHEN exakt zu transkribieren.
+# Prompt für OCR von Dokumentenseiten
+# Offizieller Prompt aus der Nanonets-OCR-s Dokumentation
+OCR_PROMPT = """Extract the text from the above document as if you were reading it naturally. Return the tables in html format. Return the equations in LaTeX representation. If there is an image in the document and image caption is not present, add a small description of the image inside the <img></img> tag; otherwise, add the image caption inside <img></img>. Watermarks should be wrapped in brackets. Ex: <watermark>OFFICIAL COPY</watermark>. Page numbers should be wrapped in brackets. Ex: <page_number>14</page_number> or <page_number>9/22</page_number>. Prefer using ☐ and ☑ for check boxes."""
 
-## Absolute Grundregeln
-1. JEDER einzelne Buchstabe, JEDER Pixel-Text, JEDER Stempel, JEDER Wasserzeichen-Text muss im Ergebnis enthalten sein. NULL Ausnahmen. Null Kompromisse.
-2. Gib NUR den erkannten Text zurueck. Keine Kommentare, keine Erklaerungen.
-3. Pruefe das gesamte Bild: horizontalen Text, gedrehten Text (90/180/270 Grad), vertikalen Text, schraegen Text, Signaturen, Stempel, Wasserzeichen, Fussnoten, Randnotizen, Kopfzeilen, Fusszeilen.
-4. Zahlen, Betraege, IBANs, Steuernummern, Rechnungsnummern, Datumsformate muessen exakt wie im Original sein. Kein Komma oder Punkt darf hinzugefuegt oder weggelassen werden.
-5. Die Ausgabe MUSS gueltiges Markdown sein.
-6. Wenn du dir bei einem Zeichen unsicher bist: Gib die bestmoegliche Lesung an. Lass KEIN Zeichen aus. Lieber ein ungenaues Zeichen als gar keins.
-
-## Komplexe Formatierung nachbauen
-- Hauptueberschriften: `# Titel`
-- Abschnittsueberschriften: `## Abschnitt`
-- Unterueberschriften: `### Unterabschnitt`
-- Fettdruck: `**wichtiges Wort**`
-- Kursiv: *hervorgehoben*
-- Unterstrichen: `<u>unterstrichen</u>`
-- Durchgestrichen: `~~durchgestrichen~~`
-- Aufzaehlungen: `- Eintrag` oder `1. erster Eintrag`
-- Trennlinien zwischen logischen Bloecken: `---`
-- Absaetze durch eine Leerzeile trennen
-- Schriftgroessen: Ueberschriften groesser als Fliesstext, Fussnoten kleiner
-- Spaltenlayout: Linker Spalte zuerst, dann rechter Spalte
-- Boxen/Rahmen: Umrande Inhalte als Blockquote `>` oder erhalte die visuelle Struktur
-- Listen-Einrueckungen: Behalte die Hierarchieebenen bei (verschachtelte Listen)
-
-## Tabellen
-Erkenne tabellarische Strukturen (Raster, Linien, Spalten) und formatiere sie als Markdown-Tabelle mit korrekter Formatierung.
-
-Beispiel:
-| Artikel | Menge | Einzelpreis | Gesamtpreis |
-|---------|-------|-------------|-------------|
-| Widget A | 2 | 15,00 EUR | 30,00 EUR |
-| Widget B | 1 | 8,50 EUR | 8,50 EUR |
-| | | Summe: | 38,50 EUR |
-
-Tabellen-Regeln:
-- Jede Tabellenzeile muss die gleiche Anzahl Spalten haben
-- Leerzellen als leere Zelle lassen (nicht mit Bindestrich fuellen)
-- Verbundene Zellen: Inhalt in die erste Spalte, restliche leer
-- Trennzeile nach der Kopfzeile: |---|---|---| (Mindestens 3 Bindestriche pro Spalte)
-- Tabellen MUESSEN als Markdown mit | Spalte | Format geschrieben werden
-- VERBOTEN: Keine HTML-Tabellen (<table>, <tr>, <td>, <th>, <thead>, <tbody>). ABSOLUT KEINE HTML-Tags fuer Tabellen. Verwende ausschliesslich Markdown-Syntax mit Pipe-Zeichen (|)
-
-## Handschrift
-- Erkenne handschriftliche Notizen, Unterschriften, Randbemerkungen und Stempeltext
-- Transkribiere Handschrift so genau wie moeglich
-- Setze transkribierte Handschrift IMMER in doppelte Anfuehrungszeichen: "handschriftlicher Text"
-- Wenn Handschrift unleserlich ist: Gib bestmoegliche Lesung in "Anfuehrungszeichen" mit [?] fuer unsichere Stellen
-
-## Vollstaendigkeit
-- Lies das Bild ZWEI MAL bevor du ausgibst: Erst grobe Uebersicht, dann zeichenweise Pruefung
-- Kein Absatz, keine Zeile, kein Wort darf im Original vorhanden aber im Ergebnis fehlen
-- Ueberpruefe besonders: Zahlen in Tabellen, IBAN-Zeichenketten, Bruchzahlen, hochgestellte Zeichen (m2, m3, etc.)
-- Wenn Text unleserlich ist: Gib die bestmoegliche Interpretation mit [?] markiert an. Lass NICHTS komplett weg.
-- Zaehle nach der Ausgabe alle Zeichen im Original und vergleiche mit deiner Ausgabe. Fehlende Zeichen sind ein FEHLER.
-- Pruefe ECKEN und RAENDER: Oft stehen dort wichtige Informationen (Stempel, Wasserzeichen, Fussnoten)
-- Pruefe ZWISCHENRAEUME: Kleingedrucktes, Fussnotenzeilen, Seitenzahlen
-- PRUEFE NOCHMALS: Scanne dein Ergebnis von OBEN nach UNTEN und vergleiche zeichenweise mit dem Original
-
-## WICHTIG
-- Beginne sofort mit dem ersten erkannten Zeichen. Keine Einleitung.
-- Beende mit dem letzten erkannten Zeichen. Keine Zusammenfassung.
-- Kein einziges Zeichen im Original darf im Ergebnis fehlen.
-- WIRKUNGS-PRUEFUNG: Wenn das Original 100 Zeichen hat, muss deine Ausgabe mindestens genauso viele Zeichen enthalten. Fehlende Zeichen bedeuten FEHLGESCHLAGENE OCR."""
-
-# Fallback-Prompt fuer schwierige Faelle
+# Fallback-Prompt für schwierige Fälle
 FALLBACK_PROMPT = """Gib den gesamten sichtbaren Text aus. Keine Formatierung."""
 
-# Prompt fuer die Nachbearbeitung des OCR-Textes
+# Prompt für die Nachbearbeitung des OCR-Textes
 REFINEMENT_PROMPT = """Du bist ein Lektor. Verbessere den folgenden OCR-Text.
 
 DEINE AUFGABE:
 1. Korrigiere Rechtschreib- und Tippfehler die durch die OCR entstanden sind
-2. Verbessere die Markdown-Formatierung: Ueberschriften, Listen, Fettdruck, Kursiv
-3. Sorge fuer konsistente Formatierung im gesamten Dokument
+2. Verbessere die Markdown-Formatierung: Überschriften, Listen, Fettdruck, Kursiv
+3. Sorge für konsistente Formatierung im gesamten Dokument
 4. Formatiere ALLE Tabellen als Markdown-Tabellen mit | Spalte | Format und korrekter Trennzeile |---|---|
-5. Aendere keinen Inhalt, keine Woerter und keine Zahlen - nur Korrekturen die eindeutig OCR-Fehler sind
+5. Ändere keinen Inhalt, keine Wörter und keine Zahlen - nur Korrekturen die eindeutig OCR-Fehler sind
 6. Erhalte die Tabellenstruktur: gleiche Anzahl Spalten pro Zeile, keine Zeile weglassen
 7. Wandle alle HTML-Tabellen (<table>, <tr>, <td>, <th>, <thead>, <tbody>) in Markdown-Tabellen um
-8. VERBOTEN: Keine HTML-Tabellen in der Ausgabe. Verwende ausschliesslich Markdown-Syntax mit Pipe-Zeichen (|)
+8. VERBOTEN: Keine HTML-Tabellen in der Ausgabe. Verwende ausschließlich Markdown-Syntax mit Pipe-Zeichen (|)
 
-AUSGABE: Nur den verbesserten Text. Keine Kommentare, keine Erklaerung was du geaendert hast."""
+AUSGABE: Nur den verbesserten Text. Keine Kommentare, keine Erklärung was du geändert hast."""
 
-# Modell fuer die Tabellenkonvertierung (-t Flag)
+# Modell für die Tabellenkonvertierung (-t Flag)
 TABLE_CONVERSION_MODEL = "qwen3.5-9b"
 
-# Prompt fuer die HTML-zu-Markdown Tabellenkonvertierung
+# Prompt für die HTML-zu-Markdown Tabellenkonvertierung
 HTML_TO_MD_TABLE_PROMPT = """Wandle alle HTML-Tabellen in dem folgenden Text in Markdown-Tabellen um.
 
 Regeln:
 1. Ersetze alle HTML-Tabellen (<table>, <tr>, <td>, <th>, <thead>, <tbody>) durch Markdown-Tabellen mit | Spalte | Format
 2. Trennzeile nach der Kopfzeile: |---|---|---| (mindestens 3 Bindestriche pro Spalte)
 3. Jede Tabellenzeile muss die gleiche Anzahl Spalten haben
-4. Gib den GESAMTEN Text zurueck - nicht nur die Tabellen
-5. Aendere nichts am restlichen Text ausserhalb der Tabellen
+4. Gib den GESAMTEN Text zurück - nicht nur die Tabellen
+5. Ändere nichts am restlichen Text ausserhalb der Tabellen
 6. Keine ```markdown oder ``` Code-Block-Auszeichnung um die Ausgabe
-7. VERBOTEN: Keine HTML-Tags fuer Tabellen in der Ausgabe
+7. VERBOTEN: Keine HTML-Tags für Tabellen in der Ausgabe
 
-AUSGABE: Den gesamten Text mit allen Tabellen als Markdown formatiert. Keine Kommentare, keine Erklaerung."""
+AUSGABE: Den gesamten Text mit allen Tabellen als Markdown formatiert. Keine Kommentare, keine Erklärung."""
 
-# Frontmatter-Template fuer erstellte .md Dateien
+# Frontmatter-Template für erstellte .md Dateien
 FRONTMATTER_TEMPLATE = """---
 id: {uuid}
 title: {title}
@@ -342,8 +279,8 @@ def generate_frontmatter(title: str, tag: str = "ocr") -> str:
     """Erstelle Frontmatter-Block mit UUID und Zeitstempel.
 
     Args:
-        title: Der Titel der Datei (wird auch als Ueberschrift verwendet).
-        tag: Der Tag fuer die Datei (Standard: "ocr").
+        title: Der Titel der Datei (wird auch als Überschrift verwendet).
+        tag: Der Tag für die Datei (Standard: "ocr").
 
     Returns:
         Der formatierte Frontmatter-String.
@@ -359,36 +296,36 @@ def generate_frontmatter(title: str, tag: str = "ocr") -> str:
 
 
 def get_files_in_directory(directory: Path) -> list[Path]:
-    """Sammle alle unterstuetzten Dateien im Verzeichnis.
+    """Sammle alle unterstützten Dateien im Verzeichnis.
 
     Args:
         directory: Das zu durchsuchende Verzeichnis.
 
     Returns:
-        Liste mit Path-Objekten fuer alle unterstuetzten Bild/PDF-Dateien.
+        Liste mit Path-Objekten für alle unterstützten Bild/PDF-Dateien.
     """
     # Alle Dateien im Verzeichnis einsammeln, sortiert nach Namen
     files = []
     for f in sorted(directory.iterdir()):
-        # Nur reguläre Dateien mit erlaubter Endung beruecksichtigen
+        # Nur reguläre Dateien mit erlaubter Endung berücksichtigen
         if f.is_file() and f.suffix.lower() in ALLOWED_EXTENSIONS:
             files.append(f)
     return files
 
 
 def select_file(start_dir: Path) -> Path | None:
-    """Zeige TUI zur Dateiauswahl und gib gewaehlten Pfad zurueck.
+    """Zeige TUI zur Dateiauswahl und gib gewählten Pfad zurück.
 
     Zeigt eine interaktive TUI mit Fragezeichen-Bibliothek, die es dem Benutzer
-    erlaubt, durch Verzeichnisse zu navigieren und eine Datei auszuwaehlen.
+    erlaubt, durch Verzeichnisse zu navigieren und eine Datei auszuwählen.
 
     Args:
-        start_dir: Das Startverzeichnis fuer die Dateiauswahl.
+        start_dir: Das Startverzeichnis für die Dateiauswahl.
 
     Returns:
-        Der ausgewaehlte Dateipfad oder None wenn abgebrochen.
+        Der ausgewählte Dateipfad oder None wenn abgebrochen.
     """
-    # Benutzerdefinierter Stil fuer questionary
+    # Benutzerdefinierter Stil für questionary
     custom_style = Style(
         [
             ("qmark", "fg:cyan bold"),
@@ -410,22 +347,22 @@ def select_file(start_dir: Path) -> Path | None:
         subdirs = sorted([d for d in start_dir.iterdir() if d.is_dir()])
         if subdirs:
             subdir = questionary.select(
-                "Keine Dateien gefunden. Waehle einen Unterordner:",
-                choices=[str(d.name) for d in subdirs] + ["[..] Uebergeordnet"],
+                "Keine Dateien gefunden. Wähle einen Unterordner:",
+                choices=[str(d.name) for d in subdirs] + ["[..] Übergeordnet"],
                 style=custom_style,
             ).ask()
 
             if subdir is None:
                 return None
 
-            if subdir == "[..] Uebergeordnet":
+            if subdir == "[..] Übergeordnet":
                 return select_file(start_dir.parent)
             return select_file(start_dir / subdir)
         else:
             console.print("[red]Keine Dateien gefunden![/red]")
             return None
 
-    # Dateiliste mit Groessenangabe erstellen
+    # Dateiliste mit Größenangabe erstellen
     file_choices = []
     for f in files:
         size = f.stat().st_size
@@ -443,7 +380,7 @@ def select_file(start_dir: Path) -> Path | None:
     choices = [fc["display"] for fc in file_choices] + ["[Ordner wechseln]"]
 
     selected = questionary.select(
-        "Waehle eine Datei:",
+        "Wähle eine Datei:",
         choices=choices,
         style=custom_style,
     ).ask()
@@ -453,18 +390,18 @@ def select_file(start_dir: Path) -> Path | None:
         subdirs = sorted([d for d in start_dir.iterdir() if d.is_dir()])
         if subdirs:
             subdir = questionary.select(
-                "Waehle einen Ordner:",
-                choices=[str(d.name) for d in subdirs] + ["[..] Uebergeordnet"],
+                "Wähle einen Ordner:",
+                choices=[str(d.name) for d in subdirs] + ["[..] Übergeordnet"],
                 style=custom_style,
             ).ask()
 
             if subdir is None:
                 return None
 
-            if subdir == "[..] Uebergeordnet":
+            if subdir == "[..] Übergeordnet":
                 return select_file(start_dir.parent)
             return select_file(start_dir / subdir)
-        # Keine Subdirs: zum Parent gehen wenn moeglich
+        # Keine Subdirs: zum Parent gehen wenn möglich
         if start_dir.parent != start_dir:
             return select_file(start_dir.parent)
         return None
@@ -478,21 +415,21 @@ def select_file(start_dir: Path) -> Path | None:
 
 
 def resize_if_needed(image_bytes: bytes, max_size: int = MAX_IMAGE_SIZE) -> bytes:
-    """Resize Bild nur wenn es groesser als max_size ist.
+    """Resize Bild nur wenn es größer als max_size ist.
 
-    Reduziert die Bildgroesse fuer eine schnellere OCR-Verarbeitung,
-    aber nur wenn es wirklich noetig ist. Beibehaltung der Seitenverhaeltnisse.
+    Reduziert die Bildgröße für eine schnellere OCR-Verarbeitung,
+    aber nur wenn es wirklich nötig ist. Beibehaltung der Seitenverhältnisse.
 
     Args:
         image_bytes: Die Bilddaten als Bytes.
-        max_size: Maximale Breite/Hoehe in Pixel.
+        max_size: Maximale Breite/Höhe in Pixel.
 
     Returns:
-        Die (moeglichst unveraenderten) Bilddaten als Bytes.
+        Die (möglichst unveränderten) Bilddaten als Bytes.
     """
     img = Image.open(io.BytesIO(image_bytes))
 
-    # Kein resize noetig
+    # Kein resize nötig
     if img.width <= max_size and img.height <= max_size:
         return image_bytes
 
@@ -507,7 +444,7 @@ def resize_if_needed(image_bytes: bytes, max_size: int = MAX_IMAGE_SIZE) -> byte
     # Proportionales resize
     img.thumbnail((max_size, max_size), Image.Resampling.LANCZOS)
 
-    # Als PNG zurueckgeben
+    # Als PNG zurückgeben
     buffer = io.BytesIO()
     img.save(buffer, format="PNG")
     return buffer.getvalue()
@@ -516,15 +453,15 @@ def resize_if_needed(image_bytes: bytes, max_size: int = MAX_IMAGE_SIZE) -> byte
 def render_pdf_page(
     page, max_size: int = MAX_IMAGE_SIZE, min_dpi: int = MIN_PDF_DPI
 ) -> bytes:
-    """Rendere PDF-Seite mit mindestens min_dpi fuer bessere Qualitaet.
+    """Rendere PDF-Seite mit mindestens min_dpi für bessere Qualität.
 
     Diese Funktion wird aktuell nicht verwendet (pdftoppm wird bevorzugt),
-    aber ist fuer zukuenftige Erweiterungen verfuegbar.
+    aber ist für zukünftige Erweiterungen verfügbar.
 
     Args:
         page: Die PyMuPDF-Seite.
-        max_size: Maximale Ausgabegroesse in Pixel.
-        min_dpi: Minimale DPI fuer das Rendering.
+        max_size: Maximale Ausgabegröße in Pixel.
+        min_dpi: Minimale DPI für das Rendering.
 
     Returns:
         Die gerenderte Seite als PNG-Bytes.
@@ -535,7 +472,7 @@ def render_pdf_page(
     # Mindestens min_dpi erreichen
     min_scale = min_dpi / pdf_dpi
 
-    # Maximale Groesse nicht ueberschreiten
+    # Maximale Größe nicht überschreiten
     if rect.width * min_scale > max_size or rect.height * min_scale > max_size:
         # Scale begrenzen auf max_size
         scale = min(max_size / rect.width, max_size / rect.height)
@@ -549,22 +486,22 @@ def render_pdf_page(
 
 
 def has_table_structure(text: str) -> bool:
-    """Pruefe ob Text Tabellen-Struktur enthaelt (Pipe-Zeichen oder Tabulatoren).
+    """Prüfe ob Text Tabellen-Struktur enthält (Pipe-Zeichen oder Tabulatoren).
 
     Wird verwendet um zu erkennen, ob das OCR-Ergebnis potenzielle Tabellen
-    enthaelt. Mehrere Zeilen mit | oder Tabs gelten als Indikator.
+    enthält. Mehrere Zeilen mit | oder Tabs gelten als Indikator.
 
     Args:
-        text: Der zu pruefende Text.
+        text: Der zu prüfende Text.
 
     Returns:
-        True wenn der Text Tabellen-Struktur enthaelt.
+        True wenn der Text Tabellen-Struktur enthält.
     """
     lines = text.strip().split("\n")
 
     table_line_count = 0
     for line in lines:
-        # Pipe-Zeichen fuer Markdown-Tabellen
+        # Pipe-Zeichen für Markdown-Tabellen
         if line.count("|") >= 2:
             table_line_count += 1
         # Viele Tabulatoren (Spalten-Trenner)
@@ -576,10 +513,10 @@ def has_table_structure(text: str) -> bool:
 
 
 def detect_language(text: str) -> str:
-    """Erkenne Sprache automatisch anhand haeufiger Woerter.
+    """Erkenne Sprache automatisch anhand häufiger Wörter.
 
-    Vergleicht den Text mit bekannten Woertern verschiedener Sprachen
-    und gibt die wahrscheinlichste Sprache zurueck.
+    Vergleicht den Text mit bekannten Wörtern verschiedener Sprachen
+    und gibt die wahrscheinlichste Sprache zurück.
 
     Args:
         text: Der zu analysierende Text.
@@ -588,10 +525,10 @@ def detect_language(text: str) -> str:
         Der Name der erkannten Sprache oder "Unbekannt".
     """
     # Text in Kleinbuchstaben umwandeln, mit Leerzeichen umschlossen
-    # um Ganz-Wort-Treffer zu ermoeglichen (keine Teilwoerter)
+    # um Ganz-Wort-Treffer zu ermöglichen (keine Teilwörter)
     text_lower = f" {text.lower()} "
 
-    # Punkte fuer jede Sprache berechnen: wie viele typische Woerter gefunden
+    # Punkte für jede Sprache berechnen: wie viele typische Wörter gefunden
     scores = {}
     for lang, words in LANGUAGE_PATTERNS.items():
         score = 0
@@ -600,7 +537,7 @@ def detect_language(text: str) -> str:
                 score += 1
         scores[lang] = score
 
-    # Sprache mit hoechstem Score zurueckgeben
+    # Sprache mit höchstem Score zurückgeben
     if scores:
         best_lang = max(scores, key=lambda k: scores[k])
         if scores[best_lang] > 0:
@@ -613,7 +550,7 @@ def clean_ocr_output(text: str) -> str:
     """Entferne Prompt-Artefakte aus der OCR-Ausgabe.
 
     Der OCR-LLM kann manchmal Teile des Prompts in die Ausgabe
-    einfuegen. Diese Funktion filtert solche unerwuenschten
+    einfügen. Diese Funktion filtert solche unerwünschten
     Textbausteine heraus.
 
     Args:
@@ -634,7 +571,7 @@ def clean_ocr_output(text: str) -> str:
             cleaned.append(line)
             continue
 
-        # Pruefe ob Zeile ein Prompt-Artefakt enthaelt
+        # Prüfe ob Zeile ein Prompt-Artefakt enthält
         for artifact in PROMPT_ARTEFACTS:
             if artifact in line_lower:
                 # Zeile nur entfernen wenn sie KURZ ist (wahrscheinlich Prompt-Rest)
@@ -666,7 +603,7 @@ def remove_all_duplicates(text: str) -> str:
 
     for line in lines:
         stripped = line.strip()
-        # Zeile hinzufuegen wenn noch nicht gesehen (Leerzeilen immer behalten)
+        # Zeile hinzufügen wenn noch nicht gesehen (Leerzeilen immer behalten)
         if stripped not in seen or not stripped:
             seen.add(stripped)
             result.append(line)
@@ -682,7 +619,7 @@ def filter_short_lines(text: str, min_length: int = MIN_LINE_LENGTH) -> str:
 
     Args:
         text: Der zu bereinigende Text.
-        min_length: Minimale Zeilenlaenge die behalten wird.
+        min_length: Minimale Zeilenlänge die behalten wird.
 
     Returns:
         Der gefilterte Text.
@@ -700,11 +637,11 @@ def filter_short_lines(text: str, min_length: int = MIN_LINE_LENGTH) -> str:
 
 
 def select_ocr_model(client: lms.Client, is_pdf: bool = False) -> str:
-    """Waehle das beste verfuegbare OCR-Modell und entlade es bei Bedarf.
+    """Wähle das beste verfügbare OCR-Modell und entlade es bei Bedarf.
 
-    Prueft welche der bevorzugten Modelle (MODEL_PREFERENCES) in LM Studio
-    heruntergeladen sind und waehlt das Modell mit hoechster Prioritaet.
-    PDF-only Modelle werden uebersprungen wenn is_pdf=False (Bilder).
+    Prüft welche der bevorzugten Modelle (MODEL_PREFERENCES) in LM Studio
+    heruntergeladen sind und wählt das Modell mit höchster Priorität.
+    PDF-only Modelle werden übersprungen wenn is_pdf=False (Bilder).
     Falls das Modell bereits geladen ist, wird es zuerst entladen um einen
     sauberen OCR-Durchlauf zu garantieren.
 
@@ -713,17 +650,17 @@ def select_ocr_model(client: lms.Client, is_pdf: bool = False) -> str:
         is_pdf: True wenn PDF verarbeitet wird (PDF-only Modelle erlaubt).
 
     Returns:
-        Die Modellkennung des ausgewaehlten Modells.
+        Die Modellkennung des ausgewählten Modells.
     """
     # Alle heruntergeladenen Modelle abrufen
     downloaded = client.list_downloaded_models()
-    # Verfuegbare Modell-IDs/Pfade als Kleinbuchstaben sammeln
+    # Verfügbare Modell-IDs/Pfade als Kleinbuchstaben sammeln
     available = {m.path.lower() for m in downloaded}
 
     selected = None
-    # Bevorzugtes Modell in Prioritaetsreihenfolge suchen
+    # Bevorzugtes Modell in Prioritätsreihenfolge suchen
     for preferred in MODEL_PREFERENCES:
-        # PDF-only Modelle ueberspringen bei Bild-Eingabe
+        # PDF-only Modelle überspringen bei Bild-Eingabe
         if not is_pdf and preferred in PDF_ONLY_MODELS:
             continue
         for avail_path in available:
@@ -740,9 +677,9 @@ def select_ocr_model(client: lms.Client, is_pdf: bool = False) -> str:
             f"[yellow]Kein bevorzugtes Modell gefunden, nutze Fallback:[/yellow] {selected}"
         )
     else:
-        console.print(f"[green]Modell gewaehlt:[/green] {selected}")
+        console.print(f"[green]Modell gewählt:[/green] {selected}")
 
-    # Modell entladen falls bereits geladen (frischer Start fuer OCR)
+    # Modell entladen falls bereits geladen (frischer Start für OCR)
     loaded = client.list_loaded_models(namespace="llm")
     for lm in loaded:
         if selected.lower() in lm.identifier.lower():
@@ -760,21 +697,21 @@ def select_ocr_model(client: lms.Client, is_pdf: bool = False) -> str:
 def ocr_page_sync(image_bytes: bytes, page_num: int, is_pdf: bool = False) -> tuple[str, str]:
     """OCR mit Markdown-Formatierung und Post-Processing.
 
-    Fuehrt die OCR auf einem Bild durch, formatiert das Ergebnis
+    Führt die OCR auf einem Bild durch, formatiert das Ergebnis
     als sauberes Markdown und erkennt die Sprache.
 
     Args:
         image_bytes: Die Bilddaten als Bytes.
-        page_num: Die Seitennummer (fuer Fortschrittsanzeige).
+        page_num: Die Seitennummer (für Fortschrittsanzeige).
         is_pdf: True wenn PDF verarbeitet wird (PDF-only Modelle erlaubt).
 
     Returns:
         Ein Tuple aus (erkannte_sprache, text_inhalt).
     """
-    # Bild ggf. verkleinern fuer bessere OCR-Performance
+    # Bild ggf. verkleinern für bessere OCR-Performance
     processed = resize_if_needed(image_bytes)
 
-    # Bild als temporaere PNG-Datei speichern (LM Studio braucht Dateipfad)
+    # Bild als temporäre PNG-Datei speichern (LM Studio braucht Dateipfad)
     with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tmp:
         tmp.write(processed)
         tmp_path = tmp.name
@@ -782,7 +719,7 @@ def ocr_page_sync(image_bytes: bytes, page_num: int, is_pdf: bool = False) -> tu
     try:
         # Verbindung zum lokalen LM Studio Server herstellen
         client = lms.Client(api_host=LMSTUDIO_HOST)
-        # Beste verfuegbares Modell auswaehlen (Prioritaetsliste)
+        # Beste verfügbares Modell auswählen (Prioritätsliste)
         model_name = select_ocr_model(client, is_pdf=is_pdf)
         model = client.llm.model(
             model_name,
@@ -790,23 +727,23 @@ def ocr_page_sync(image_bytes: bytes, page_num: int, is_pdf: bool = False) -> tu
             config={"contextLength": LMSTUDIO_CONTEXT_LENGTH},
         )
 
-        # Modell-spezifischen Prompt waehlen
+        # Modell-spezifischen Prompt wählen
         prompt = MODEL_PROMPTS.get(model_name, OCR_PROMPT)
-        # Modell-spezifische Konfiguration waehlen (Temperatur, Top-P, etc.)
+        # Modell-spezifische Konfiguration wählen (Temperatur, Top-P, etc.)
         model_config = MODEL_CONFIGS.get(model_name, {})
 
         # OCR mit Retry bei Chat-Response-Error (max. 2 Versuche)
         text = None
         for attempt in range(2):
             try:
-                # Bild erneut einlesen fuer jeden Versuch
+                # Bild erneut einlesen für jeden Versuch
                 image_handle = client.prepare_image(src=tmp_path)
                 chat = lms.Chat(SYSTEM_PROMPT)
                 chat.add_user_message(prompt, images=[image_handle])
 
                 result = model.respond(chat, config=model_config if model_config else None)
                 text = result.content
-                break  # Erfolgreich, kein Retry noetig
+                break  # Erfolgreich, kein Retry nötig
             except Exception as e:
                 if attempt == 0:
                     console.print(
@@ -843,7 +780,7 @@ def ocr_page_sync(image_bytes: bytes, page_num: int, is_pdf: bool = False) -> tu
         return "Unbekannt", f"[Fehler: {e}]"
 
     finally:
-        # Temporaere Bilddatei immer aufraeumen
+        # Temporäre Bilddatei immer aufräumen
         Path(tmp_path).unlink(missing_ok=True)
 
 
@@ -852,7 +789,7 @@ def convert_pdf_with_pdftoppm(pdf_path: Path) -> list[Path]:
 
     Verwendet das System-Tool pdftoppm um jede PDF-Seite in ein
     PNG-Bild umzuwandeln. Die Dateien werden im gleichen Verzeichnis
-    wie die PDF erstellt mit dem Praefix "ocrpage-".
+    wie die PDF erstellt mit dem Präfix "ocrpage-".
 
     Args:
         pdf_path: Pfad zur PDF-Datei.
@@ -864,7 +801,7 @@ def convert_pdf_with_pdftoppm(pdf_path: Path) -> list[Path]:
     pdf_dir = pdf_path.parent
 
     # pdftoppm aufrufen: jede PDF-Seite wird als PNG gespeichert
-    # Praefix "ocrpage" erzeugt zunaechst Dateien wie ocrpage-1.png, ocrpage-2.png
+    # Präfix "ocrpage" erzeugt zunächst Dateien wie ocrpage-1.png, ocrpage-2.png
     subprocess.run(
         ["pdftoppm", "-png", str(pdf_path), "ocrpage"],
         cwd=pdf_dir,
@@ -874,7 +811,7 @@ def convert_pdf_with_pdftoppm(pdf_path: Path) -> list[Path]:
     )
 
     # Erzeugte PNG-Dateien einsammeln und umbenennen
-    # pdftoppm erzeugt keine fuehrenden Nullen, daher manuell umbenennen:
+    # pdftoppm erzeugt keine führenden Nullen, daher manuell umbenennen:
     # ocrpage-1.png -> ocrpage-0001.png, ocrpage-2.png -> ocrpage-0002.png, ...
     png_files = sorted(pdf_dir.glob("ocrpage-*.png"))
     renamed_files = []
@@ -891,27 +828,27 @@ def convert_pdf_with_pdftoppm(pdf_path: Path) -> list[Path]:
 
 
 def cleanup_ocr_pages(directory: Path) -> None:
-    """Loesche alle temporaeren ocrpage-*.png Dateien im Verzeichnis.
+    """Lösche alle temporären ocrpage-*.png Dateien im Verzeichnis.
 
     Nach erfolgreicher OCR-Verarbeitung eines PDFs werden die
-    temporaeren Bilddateien geloescht um das Verzeichnis sauber
+    temporären Bilddateien gelöscht um das Verzeichnis sauber
     zu halten.
 
     Args:
-        directory: Das Verzeichnis in dem die Dateien geloescht werden sollen.
+        directory: Das Verzeichnis in dem die Dateien gelöscht werden sollen.
     """
-    # Alle temporaeren ocrpage-Dateien im Verzeichnis finden
+    # Alle temporären ocrpage-Dateien im Verzeichnis finden
     ocr_files = list(directory.glob("ocrpage-*.png"))
     for ocr_file in ocr_files:
         ocr_file.unlink()
-        console.print(f"[dim]Geloescht: {ocr_file.name}[/dim]")
+        console.print(f"[dim]Gelöscht: {ocr_file.name}[/dim]")
 
 
 def process_pdf_with_direct_model(pdf_path: Path) -> tuple[str, str]:
-    """Verarbeite ein PDF direkt mit einem PDF-faehigen Modell (ohne pdftoppm).
+    """Verarbeite ein PDF direkt mit einem PDF-fähigen Modell (ohne pdftoppm).
 
     Sendet das gesamte PDF an ein Modell das PDF-Input direkt verarbeiten kann
-    (z.B. nanonets-ocr-s). Keine Konvertierung zu PNG noetig.
+    (z.B. nanonets-ocr-s). Keine Konvertierung zu PNG nötig.
 
     Args:
         pdf_path: Pfad zur PDF-Datei.
@@ -925,7 +862,7 @@ def process_pdf_with_direct_model(pdf_path: Path) -> tuple[str, str]:
         console=console,
     ) as progress:
         task = progress.add_task("[cyan]Verarbeite PDF direkt...[/cyan]")
-        progress.update(task, description="[yellow]OCR laeuft (direkter PDF-Modus)...[/yellow]")
+        progress.update(task, description="[yellow]OCR läuft (direkter PDF-Modus)...[/yellow]")
 
         try:
             client = lms.Client(api_host=LMSTUDIO_HOST)
@@ -936,12 +873,12 @@ def process_pdf_with_direct_model(pdf_path: Path) -> tuple[str, str]:
                 config={"contextLength": LMSTUDIO_CONTEXT_LENGTH},
             )
 
-            # Modell-spezifischen Prompt waehlen
+            # Modell-spezifischen Prompt wählen
             prompt = MODEL_PROMPTS.get(model_name, OCR_PROMPT)
-            # Modell-spezifische Konfiguration waehlen (Temperatur, Top-P, etc.)
+            # Modell-spezifische Konfiguration wählen (Temperatur, Top-P, etc.)
             model_config = MODEL_CONFIGS.get(model_name, {})
 
-            # PDF direkt an das Modell senden (prepare_image unterstuetzt auch PDFs)
+            # PDF direkt an das Modell senden (prepare_image unterstützt auch PDFs)
             pdf_handle = client.prepare_image(src=str(pdf_path))
             chat = lms.Chat(SYSTEM_PROMPT)
             chat.add_user_message(prompt, images=[pdf_handle])
@@ -975,10 +912,10 @@ def process_pdf_with_direct_model(pdf_path: Path) -> tuple[str, str]:
 
 
 def process_pdf(pdf_path: Path) -> tuple[str, str]:
-    """Verarbeite ein PDF - automatisch den besten Modus waehlen.
+    """Verarbeite ein PDF - automatisch den besten Modus wählen.
 
-    Prueft ob ein PDF-only Modell verfuegbar ist. Wenn ja, wird das PDF
-    direkt an das Modell gesendet (schneller, keine pdftoppm noetig).
+    Prüft ob ein PDF-only Modell verfügbar ist. Wenn ja, wird das PDF
+    direkt an das Modell gesendet (schneller, keine pdftoppm nötig).
     Andernfalls wird das PDF zu PNG konvertiert und seitenweise verarbeitet.
 
     Args:
@@ -987,7 +924,7 @@ def process_pdf(pdf_path: Path) -> tuple[str, str]:
     Returns:
         Ein Tuple aus (erkannte_sprache, gesamter_text_inhalt).
     """
-    # Pruefen ob ein PDF-only Modell verfuegbar ist
+    # Prüfen ob ein PDF-only Modell verfügbar ist
     try:
         client = lms.Client(api_host=LMSTUDIO_HOST)
         downloaded = client.list_downloaded_models()
@@ -1000,12 +937,12 @@ def process_pdf(pdf_path: Path) -> tuple[str, str]:
                     if preferred.lower() in avail_path:
                         pdf_model_available = True
                         break
-                break  # Nur das erste PDF-only Modell pruefen
+                break  # Nur das erste PDF-only Modell prüfen
     except Exception:
         pdf_model_available = False
 
     if pdf_model_available:
-        console.print("[cyan]PDF-only Modell verfuegbar - direkter PDF-Modus[/cyan]")
+        console.print("[cyan]PDF-only Modell verfügbar - direkter PDF-Modus[/cyan]")
         try:
             return process_pdf_with_direct_model(pdf_path)
         except Exception as e:
@@ -1019,8 +956,8 @@ def process_pdf(pdf_path: Path) -> tuple[str, str]:
 def process_pdf_with_pdftoppm(pdf_path: Path) -> tuple[str, str]:
     """Verarbeite alle Seiten eines PDFs einzeln mit pdftoppm.
 
-    Konvertiert das PDF zunaechst zu PNG-Seiten, fuehrt dann auf
-    jeder Seite einzeln die OCR durch und fuegt die Ergebnisse
+    Konvertiert das PDF zunächst zu PNG-Seiten, führt dann auf
+    jeder Seite einzeln die OCR durch und fügt die Ergebnisse
     zusammen. Jede Seite wird mit einer Markierung versehen.
 
     Args:
@@ -1054,7 +991,7 @@ def process_pdf_with_pdftoppm(pdf_path: Path) -> tuple[str, str]:
 
             progress.update(
                 task,
-                description=f"[yellow]Seite {page_num + 1}: OCR laeuft...[/yellow]",
+                description=f"[yellow]Seite {page_num + 1}: OCR läuft...[/yellow]",
             )
 
             language, content = ocr_page_sync(img_bytes, page_num + 1, is_pdf=True)
@@ -1063,14 +1000,14 @@ def process_pdf_with_pdftoppm(pdf_path: Path) -> tuple[str, str]:
             if page_num == 0:
                 detected_language = language
 
-            # Seiten-Outline als Markdown-Ueberschrift einfuegen
+            # Seiten-Outline als Markdown-Überschrift einfügen
             all_content.append(f"\n\n# Seite {page_num + 1}\n\n{content}")
             progress.advance(task)
             progress.update(
                 task, description=f"[green]Seite {page_num + 1} fertig[/green]"
             )
 
-    # Loesche temporaere ocrpage-*.png Dateien nach der Verarbeitung
+    # Lösche temporäre ocrpage-*.png Dateien nach der Verarbeitung
     cleanup_ocr_pages(pdf_path.parent)
 
     return detected_language, "".join(all_content)
@@ -1079,7 +1016,7 @@ def process_pdf_with_pdftoppm(pdf_path: Path) -> tuple[str, str]:
 def process_image_file(image_path: Path) -> tuple[str, str]:
     """Verarbeite eine einzelne Bilddatei.
 
-    Fuehrt OCR auf einer einzigen Bilddatei durch (PNG, JPG, JPEG).
+    Führt OCR auf einer einzigen Bilddatei durch (PNG, JPG, JPEG).
 
     Args:
         image_path: Pfad zur Bilddatei.
@@ -1090,14 +1027,14 @@ def process_image_file(image_path: Path) -> tuple[str, str]:
     # Bilddatei komplett in den Speicher laden
     image_bytes = image_path.read_bytes()
 
-    # Fortschrittsanzeige waehrend der OCR-Verarbeitung
+    # Fortschrittsanzeige während der OCR-Verarbeitung
     with Progress(
         SpinnerColumn(),
         TextColumn("[progress.description]{task.description}"),
         console=console,
     ) as progress:
         task = progress.add_task("[cyan]Verarbeite Bild...[/cyan]")
-        progress.update(task, description="[yellow]OCR laeuft...[/yellow]")
+        progress.update(task, description="[yellow]OCR läuft...[/yellow]")
 
         language, content = ocr_page_sync(image_bytes, 1)
 
@@ -1114,7 +1051,7 @@ def save_markdown(file_path: Path, language: str, content: str) -> Path:
     inklusive UUID, Titel und Zeitstempel.
 
     Args:
-        file_path: Pfad zur Quelldatei (fuer den Namen und Titel).
+        file_path: Pfad zur Quelldatei (für den Namen und Titel).
         language: Erkannte Sprache (wird nur auf der Konsole angezeigt).
         content: Der OCR-Text als Markdown.
 
@@ -1136,7 +1073,7 @@ def save_markdown(file_path: Path, language: str, content: str) -> Path:
 def refine_markdown(content: str) -> str:
     """Verbessere OCR-Text mit dem geladenen LM Studio Modell.
 
-    Sendet den OCR-Text an das Modell fuer Rechtschreibkorrektur
+    Sendet den OCR-Text an das Modell für Rechtschreibkorrektur
     und verbesserte Markdown-Formatierung. Nutzt das bereits geladene
     Modell (TTL steuert das automatische Entladen).
 
@@ -1171,7 +1108,7 @@ def refine_markdown(content: str) -> str:
             # Post-Processing: Prompt-Artefakte entfernen
             refined = clean_ocr_output(refined)
 
-            # Wenn das Ergebnis leer ist, Original zurueckgeben
+            # Wenn das Ergebnis leer ist, Original zurückgeben
             if not refined.strip():
                 progress.update(
                     task, description="[yellow]Kein Ergebnis, behalte Original[/yellow]"
@@ -1185,38 +1122,38 @@ def refine_markdown(content: str) -> str:
             progress.update(
                 task, description=f"[red]Fehler bei Verbesserung: {e}[/red]"
             )
-            console.print("[yellow]Behalte urspruenglichen OCR-Text.[/yellow]")
+            console.print("[yellow]Behalte ursprünglichen OCR-Text.[/yellow]")
             return content
 
 
 def insert_text_into_pdf(pdf_path: Path, markdown_text: str) -> None:
-    """Fuege OCR-Text als unsichtbare Textebene auf die entsprechenden PDF-Seiten ein.
+    """Füge OCR-Text als unsichtbare Textebene auf die entsprechenden PDF-Seiten ein.
 
     Verwendet PyMuPDF (fitz) mit Render-Modus 3 (unsichtbarer Text), um den
-    erkannten OCR-Text als durchsuchbare Textebene ueber die jeweilige
-    PDF-Seite zu legen. Der visuelle Inhalt der PDF bleibt unveraendert,
-    aber der Text wird auswaehlbar und durchsuchbar.
+    erkannten OCR-Text als durchsuchbare Textebene über die jeweilige
+    PDF-Seite zu legen. Der visuelle Inhalt der PDF bleibt unverändert,
+    aber der Text wird auswählbar und durchsuchbar.
 
     Args:
         pdf_path: Pfad zur Quell-PDF-Datei (wird direkt modifiziert).
-        markdown_text: Der OCR-Text mit Seiten-Ueberschriften ("# Seite N").
+        markdown_text: Der OCR-Text mit Seiten-Überschriften ("# Seite N").
     """
     # Seiteninhalte aus dem kombinierten Markdown-Text extrahieren
     # Trenner-Format: "# Seite N" (von process_pdf erzeugt)
     pages_content = re.split(r"\n*# Seite \d+\n*", markdown_text)
-    # Leere Eintraege entfernen (z.B. Text vor dem ersten Trenner)
+    # Leere Einträge entfernen (z.B. Text vor dem ersten Trenner)
     pages_content = [p.strip() for p in pages_content if p.strip()]
 
-    # PDF-Dokument oeffnen
+    # PDF-Dokument öffnen
     doc = fitz.open(str(pdf_path))
 
-    # Schriftgroesse und Seitenrand festlegen
+    # Schriftgröße und Seitenrand festlegen
     fontsize = 9
     margin = 50
-    # Zeilenabstand: Schriftgroesse plus 2 Punkte Zwischenraum
+    # Zeilenabstand: Schriftgröße plus 2 Punkte Zwischenraum
     line_height = fontsize + 2
 
-    # Fuer jede PDF-Seite den entsprechenden OCR-Text einfuegen
+    # Für jede PDF-Seite den entsprechenden OCR-Text einfügen
     for page_idx in range(min(len(doc), len(pages_content))):
         page = doc[page_idx]
         page_text = pages_content[page_idx]
@@ -1228,15 +1165,15 @@ def insert_text_into_pdf(pdf_path: Path, markdown_text: str) -> None:
 
         # OCR-Text zeilenweise auf die Seite schreiben
         lines = page_text.split("\n")
-        # Y-Position starten am oberen Rand plus Schriftgroesse (Baseline)
+        # Y-Position starten am oberen Rand plus Schriftgröße (Baseline)
         y = margin + fontsize
 
         for line in lines:
-            # Seitenende erreicht: restliche Zeilen ueberspringen
+            # Seitenende erreicht: restliche Zeilen überspringen
             if y + line_height > max_y:
                 break
-            # Textzeile als unsichtbare Textebene einfuegen (Modus 3)
-            # "helv" = Helvetica, unterstuetzt Deutsch/Lateinisch inkl. Umlaute
+            # Textzeile als unsichtbare Textebene einfügen (Modus 3)
+            # "helv" = Helvetica, unterstützt Deutsch/Lateinisch inkl. Umlaute
             page.insert_text(
                 (margin, y),
                 line,
@@ -1244,10 +1181,10 @@ def insert_text_into_pdf(pdf_path: Path, markdown_text: str) -> None:
                 fontsize=fontsize,
                 render_mode=3,
             )
-            # Zur naechsten Zeile weiterruecken
+            # Zur nächsten Zeile weiterrücken
             y += line_height
 
-    # PDF inkrementell speichern (schneller, aendert nur den Anhang)
+    # PDF inkrementell speichern (schneller, ändert nur den Anhang)
     doc.save(str(pdf_path), incremental=True, encryption=0)
     doc.close()
 
@@ -1259,7 +1196,7 @@ def get_markdown_files(directory: Path) -> list[Path]:
         directory: Das zu durchsuchende Verzeichnis.
 
     Returns:
-        Liste mit Path-Objekten fuer alle Markdown-Dateien.
+        Liste mit Path-Objekten für alle Markdown-Dateien.
     """
     files = []
     for f in sorted(directory.iterdir()):
@@ -1269,16 +1206,16 @@ def get_markdown_files(directory: Path) -> list[Path]:
 
 
 def select_markdown_file(start_dir: Path) -> Path | None:
-    """Zeige TUI zur Auswahl einer .md Datei und gib gewaehlten Pfad zurueck.
+    """Zeige TUI zur Auswahl einer .md Datei und gib gewählten Pfad zurück.
 
     Listet alle Markdown-Dateien im Verzeichnis auf und erlaubt die Auswahl.
     Bietet Ordner-Navigation an wenn keine .md Dateien gefunden werden.
 
     Args:
-        start_dir: Das Startverzeichnis fuer die Dateiauswahl.
+        start_dir: Das Startverzeichnis für die Dateiauswahl.
 
     Returns:
-        Der ausgewaehlte Dateipfad oder None wenn abgebrochen.
+        Der ausgewählte Dateipfad oder None wenn abgebrochen.
     """
     custom_style = Style(
         [
@@ -1300,15 +1237,15 @@ def select_markdown_file(start_dir: Path) -> Path | None:
         subdirs = sorted([d for d in start_dir.iterdir() if d.is_dir()])
         if subdirs:
             subdir = questionary.select(
-                "Keine .md Dateien gefunden. Waehle einen Unterordner:",
-                choices=[str(d.name) for d in subdirs] + ["[..] Uebergeordnet"],
+                "Keine .md Dateien gefunden. Wähle einen Unterordner:",
+                choices=[str(d.name) for d in subdirs] + ["[..] Übergeordnet"],
                 style=custom_style,
             ).ask()
 
             if subdir is None:
                 return None
 
-            if subdir == "[..] Uebergeordnet":
+            if subdir == "[..] Übergeordnet":
                 return select_markdown_file(start_dir.parent)
             return select_markdown_file(start_dir / subdir)
         else:
@@ -1332,7 +1269,7 @@ def select_markdown_file(start_dir: Path) -> Path | None:
     choices = [fc["display"] for fc in file_choices] + ["[Ordner wechseln]"]
 
     selected = questionary.select(
-        "Waehle eine .md Datei:",
+        "Wähle eine .md Datei:",
         choices=choices,
         style=custom_style,
     ).ask()
@@ -1341,15 +1278,15 @@ def select_markdown_file(start_dir: Path) -> Path | None:
         subdirs = sorted([d for d in start_dir.iterdir() if d.is_dir()])
         if subdirs:
             subdir = questionary.select(
-                "Waehle einen Ordner:",
-                choices=[str(d.name) for d in subdirs] + ["[..] Uebergeordnet"],
+                "Wähle einen Ordner:",
+                choices=[str(d.name) for d in subdirs] + ["[..] Übergeordnet"],
                 style=custom_style,
             ).ask()
 
             if subdir is None:
                 return None
 
-            if subdir == "[..] Uebergeordnet":
+            if subdir == "[..] Übergeordnet":
                 return select_markdown_file(start_dir.parent)
             return select_markdown_file(start_dir / subdir)
         if start_dir.parent != start_dir:
@@ -1366,7 +1303,7 @@ def select_markdown_file(start_dir: Path) -> Path | None:
 def prepare_table_conversion_model(client: lms.Client) -> str:
     """Entlade alle Modelle ausser dem Tabellenkonvertierungs-Modell und lade es.
 
-    Entlaedt alle geladenen Modelle in LM Studio die nicht das Ziel-Modell
+    Entlädt alle geladenen Modelle in LM Studio die nicht das Ziel-Modell
     (TABLE_CONVERSION_MODEL) sind, um Ressourcen freizugeben.
 
     Args:
@@ -1396,7 +1333,7 @@ def convert_html_tables_in_file(md_path: Path) -> None:
     """Wandle alle HTML-Tabellen in einer .md Datei in Markdown-Tabellen um.
 
     Liest die Datei, sendet den Inhalt an das Tabellenkonvertierungs-Modell
-    in LM Studio und speichert das Ergebnis zurueck in dieselbe Datei.
+    in LM Studio und speichert das Ergebnis zurück in dieselbe Datei.
 
     Args:
         md_path: Pfad zur Markdown-Datei.
@@ -1432,7 +1369,7 @@ def convert_html_tables_in_file(md_path: Path) -> None:
             result = model.respond(chat)
             converted = result.content
 
-            # Ueberfluessige Code-Block-Auszeichnungen entfernen
+            # Überflüssige Code-Block-Auszeichnungen entfernen
             # falls das Modell trotzdem ```markdown verwendet
             converted = converted.strip()
             if converted.startswith("```markdown"):
@@ -1474,7 +1411,7 @@ def main():
         if md_file is None:
             console.print("[yellow]Abgebrochen.[/yellow]")
             return
-        console.print(f"\n[green]Gewaehlt:[/green] {md_file.name}\n")
+        console.print(f"\n[green]Gewählt:[/green] {md_file.name}\n")
         convert_html_tables_in_file(md_file)
         return
 
@@ -1489,14 +1426,14 @@ def main():
         elif arg_path.is_file():
             start_dir = arg_path.parent
 
-    # Datei ueber TUI auswaehlen
+    # Datei über TUI auswählen
     selected_file = select_file(start_dir)
 
     if selected_file is None:
         console.print("[yellow]Abgebrochen.[/yellow]")
         return
 
-    console.print(f"\n[green]Gewaehlt:[/green] {selected_file.name}\n")
+    console.print(f"\n[green]Gewählt:[/green] {selected_file.name}\n")
 
     try:
         ext = selected_file.suffix.lower()
@@ -1514,12 +1451,12 @@ def main():
         # Ergebnis als Markdown-Datei speichern
         output_path = save_markdown(selected_file, language, content)
 
-        # Bei PDF-Input: OCR-Text auch in die Quell-PDF einfuegen
+        # Bei PDF-Input: OCR-Text auch in die Quell-PDF einfügen
         if ext == ".pdf":
-            console.print("[cyan]Fuege OCR-Text in Quell-PDF ein...[/cyan]")
+            console.print("[cyan]Füge OCR-Text in Quell-PDF ein...[/cyan]")
             insert_text_into_pdf(selected_file, content)
             console.print(
-                "[green]OCR-Text als durchsuchbare Ebene in Quell-PDF eingefuegt (Modus 3).[/green]"
+                "[green]OCR-Text als durchsuchbare Ebene in Quell-PDF eingefügt (Modus 3).[/green]"
             )
 
         console.print("\n[bold green]Fertig![/bold green]")
