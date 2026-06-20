@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-v1.15.0 - OCR zu Markdown Konverter mit TUI-Dateiauswahl
+v1.15.1 - OCR zu Markdown Konverter mit TUI-Dateiauswahl
 
 Verwendet ein LLM (via LM Studio) um Bilddateien und PDFs zu OCR-lesen
 und als Markdown mit Tabellen-Formatierung auszugeben.
@@ -96,6 +96,8 @@ MODEL_LOAD_CONFIGS = {
 }
 
 # Jinja Chat-Template für nanonets-ocr-s (ChatML-Format, LM Studio MiniJinja)
+# Hinweis: Wird nicht über die API gesendet, sondern muss in LM Studio GUI konfiguriert werden
+# (My Models → ⚙️ → Prompt Template → Jinja Template)
 NANONETS_JINJA_TEMPLATE = """{%- for message in messages -%}
 {%- if message.role == "system" -%}
 <|im_start|>system
@@ -113,7 +115,9 @@ NANONETS_JINJA_TEMPLATE = """{%- for message in messages -%}
 {%- endif -%}"""
 
 # Modell-spezifische Konfigurationen (Prediction-Parameter)
-# nanonets-ocr-s: Parameter aus ocr.preset.json + Jinja-Template
+# nanonets-ocr-s: Parameter aus ocr.preset.json
+# promptTemplate wird NICHT über die API gesendet (bricht Bild-Injektion),
+# muss in LM Studio GUI konfiguriert werden
 MODEL_CONFIGS = {
     "nanonets-ocr-s": {
         "temperature": 0,
@@ -123,13 +127,6 @@ MODEL_CONFIGS = {
         "topKSampling": -1,
         "maxTokens": 1500,
         "stopStrings": ["<|im_start|>", "<|im_end|>"],
-        "promptTemplate": {
-            "type": "jinja",
-            "stopStrings": ["<|im_start|>", "<|im_end|>"],
-            "jinjaPromptTemplate": {
-                "template": NANONETS_JINJA_TEMPLATE,
-            },
-        },
     },
 }
 
