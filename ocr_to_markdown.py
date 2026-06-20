@@ -217,71 +217,7 @@ PROMPT_ARTEFACTS = [
 
 # Prompt fuer OCR von DIN A4 Dokumenten (Briefe und Rechnungen)
 # Deckt komplexe Formatierungen, Tabellen, Handschrift und QR-Codes ab
-OCR_PROMPT = """Du bist ein Praezisions-OCR-Scanner. Deine Aufgabe ist es, dieses Bild ZEICHEN FUER ZEICHEN exakt zu transkribieren.
-
-## Absolute Grundregeln
-1. JEDER einzelne Buchstabe, JEDER Pixel-Text, JEDER Stempel, JEDER Wasserzeichen-Text muss im Ergebnis enthalten sein. NULL Ausnahmen. Null Kompromisse.
-2. Gib NUR den erkannten Text zurueck. Keine Kommentare, keine Erklaerungen.
-3. Pruefe das gesamte Bild: horizontalen Text, gedrehten Text (90/180/270 Grad), vertikalen Text, schraegen Text, Signaturen, Stempel, Wasserzeichen, Fussnoten, Randnotizen, Kopfzeilen, Fusszeilen.
-4. Zahlen, Betraege, IBANs, Steuernummern, Rechnungsnummern, Datumsformate muessen exakt wie im Original sein. Kein Komma oder Punkt darf hinzugefuegt oder weggelassen werden.
-5. Die Ausgabe MUSS gueltiges Markdown sein.
-6. Wenn du dir bei einem Zeichen unsicher bist: Gib die bestmoegliche Lesung an. Lass KEIN Zeichen aus. Lieber ein ungenaues Zeichen als gar keins.
-
-## Komplexe Formatierung nachbauen
-- Hauptueberschriften: `# Titel`
-- Abschnittsueberschriften: `## Abschnitt`
-- Unterueberschriften: `### Unterabschnitt`
-- Fettdruck: `**wichtiges Wort**`
-- Kursiv: *hervorgehoben*
-- Unterstrichen: `<u>unterstrichen</u>`
-- Durchgestrichen: `~~durchgestrichen~~`
-- Aufzaehlungen: `- Eintrag` oder `1. erster Eintrag`
-- Trennlinien zwischen logischen Bloecken: `---`
-- Absaetze durch eine Leerzeile trennen
-- Schriftgroessen: Ueberschriften groesser als Fliesstext, Fussnoten kleiner
-- Spaltenlayout: Linker Spalte zuerst, dann rechter Spalte
-- Boxen/Rahmen: Umrande Inhalte als Blockquote `>` oder erhalte die visuelle Struktur
-- Listen-Einrueckungen: Behalte die Hierarchieebenen bei (verschachtelte Listen)
-
-## Tabellen
-Erkenne tabellarische Strukturen (Raster, Linien, Spalten) und formatiere sie als Markdown-Tabelle mit korrekter Formatierung.
-
-Beispiel:
-| Artikel | Menge | Einzelpreis | Gesamtpreis |
-|---------|-------|-------------|-------------|
-| Widget A | 2 | 15,00 EUR | 30,00 EUR |
-| Widget B | 1 | 8,50 EUR | 8,50 EUR |
-| | | Summe: | 38,50 EUR |
-
-Tabellen-Regeln:
-- Jede Tabellenzeile muss die gleiche Anzahl Spalten haben
-- Leerzellen als leere Zelle lassen (nicht mit Bindestrich fuellen)
-- Verbundene Zellen: Inhalt in die erste Spalte, restliche leer
-- Trennzeile nach der Kopfzeile: |---|---|---| (Mindestens 3 Bindestriche pro Spalte)
-- Tabellen MUESSEN als Markdown mit | Spalte | Format geschrieben werden
-- VERBOTEN: Keine HTML-Tabellen (<table>, <tr>, <td>, <th>, <thead>, <tbody>). ABSOLUT KEINE HTML-Tags fuer Tabellen. Verwende ausschliesslich Markdown-Syntax mit Pipe-Zeichen (|)
-
-## Handschrift
-- Erkenne handschriftliche Notizen, Unterschriften, Randbemerkungen und Stempeltext
-- Transkribiere Handschrift so genau wie moeglich
-- Setze transkribierte Handschrift IMMER in doppelte Anfuehrungszeichen: "handschriftlicher Text"
-- Wenn Handschrift unleserlich ist: Gib bestmoegliche Lesung in "Anfuehrungszeichen" mit [?] fuer unsichere Stellen
-
-## Vollstaendigkeit
-- Lies das Bild ZWEI MAL bevor du ausgibst: Erst grobe Uebersicht, dann zeichenweise Pruefung
-- Kein Absatz, keine Zeile, kein Wort darf im Original vorhanden aber im Ergebnis fehlen
-- Ueberpruefe besonders: Zahlen in Tabellen, IBAN-Zeichenketten, Bruchzahlen, hochgestellte Zeichen (m2, m3, etc.)
-- Wenn Text unleserlich ist: Gib die bestmoegliche Interpretation mit [?] markiert an. Lass NICHTS komplett weg.
-- Zaehle nach der Ausgabe alle Zeichen im Original und vergleiche mit deiner Ausgabe. Fehlende Zeichen sind ein FEHLER.
-- Pruefe ECKEN und RAENDER: Oft stehen dort wichtige Informationen (Stempel, Wasserzeichen, Fussnoten)
-- Pruefe ZWISCHENRAEUME: Kleingedrucktes, Fussnotenzeilen, Seitenzahlen
-- PRUEFE NOCHMALS: Scanne dein Ergebnis von OBEN nach UNTEN und vergleiche zeichenweise mit dem Original
-
-## WICHTIG
-- Beginne sofort mit dem ersten erkannten Zeichen. Keine Einleitung.
-- Beende mit dem letzten erkannten Zeichen. Keine Zusammenfassung.
-- Kein einziges Zeichen im Original darf im Ergebnis fehlen.
-- WIRKUNGS-PRUEFUNG: Wenn das Original 100 Zeichen hat, muss deine Ausgabe mindestens genauso viele Zeichen enthalten. Fehlende Zeichen bedeuten FEHLGESCHLAGENE OCR."""
+OCR_PROMPT = """Convert this document page to Markdown. Extract all text, tables as Markdown tables, formulas, and preserve the document structure. Start the output with "# Seite N" where N is the page number. Do not add explanations."""
 
 # Fallback-Prompt fuer schwierige Faelle
 FALLBACK_PROMPT = """Gib den gesamten sichtbaren Text aus. Keine Formatierung."""
