@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-v1.9.2 - OCR zu Markdown Konverter mit TUI-Dateiauswahl
+v1.9.3 - OCR zu Markdown Konverter mit TUI-Dateiauswahl
 
 Verwendet ein LLM (via LM Studio) um Bilddateien und PDFs zu OCR-lesen
 und als Markdown mit Tabellen-Formatierung auszugeben.
@@ -84,6 +84,12 @@ PDF_ONLY_MODELS = {
 # PaddleOCR-VL erwartet kurze Task-Prompts wie "OCR:", nicht lange Anweisungen
 MODEL_PROMPTS = {
     "paddlepaddle/paddleocr-vl-1.6-gguf/paddleocr-vl-1.6-gguf.gguf": "Please extract all text and tables from this German document image exactly as they appear.",
+}
+
+# Modell-spezifische Temperatur-Einstellungen
+# PaddleOCR-VL funktioniert am besten mit Temperatur 0 (deterministische Ausgabe)
+MODEL_TEMPERATURES = {
+    "paddlepaddle/paddleocr-vl-1.6-gguf/paddleocr-vl-1.6-gguf.gguf": 0.0,
 }
 
 # Woerter fuer automatische Spracherkennung
@@ -779,6 +785,8 @@ def ocr_page_sync(image_bytes: bytes, page_num: int, is_pdf: bool = False) -> tu
 
         # Modell-spezifischen Prompt waehlen
         prompt = MODEL_PROMPTS.get(model_name, OCR_PROMPT)
+        # Modell-spezifische Temperatur waehlen (Default: None = LM Studio Default)
+        temperature = MODEL_TEMPERATURES.get(model_name)
 
         # OCR mit Retry bei Chat-Response-Error (max. 2 Versuche)
         text = None
@@ -789,7 +797,7 @@ def ocr_page_sync(image_bytes: bytes, page_num: int, is_pdf: bool = False) -> tu
                 chat = lms.Chat(prompt)
                 chat.add_user_message([image_handle])
 
-                result = model.respond(chat)
+                result = model.respond(chat, config={"temperature": temperature} if temperature is not None else None)
                 text = result.content
                 break  # Erfolgreich, kein Retry noetig
             except Exception as e:
@@ -809,7 +817,7 @@ def ocr_page_sync(image_bytes: bytes, page_num: int, is_pdf: bool = False) -> tu
             chat = lms.Chat(fallback)
             image_handle = client.prepare_image(src=tmp_path)
             chat.add_user_message([image_handle])
-            result = model.respond(chat)
+            result = model.respond(chat, config={"temperature": temperature} if temperature is not None else None)
             text = result.content
 
         # Post-Processing: Prompt-Artefakte entfernen, kurze Zeilen filtern,
@@ -923,13 +931,15 @@ def process_pdf_with_direct_model(pdf_path: Path) -> tuple[str, str]:
 
             # Modell-spezifischen Prompt waehlen
             prompt = MODEL_PROMPTS.get(model_name, OCR_PROMPT)
+            # Modell-spezifische Temperatur waehlen (Default: None = LM Studio Default)
+            temperature = MODEL_TEMPERATURES.get(model_name)
 
             # PDF direkt an das Modell senden (prepare_image unterstuetzt auch PDFs)
             pdf_handle = client.prepare_image(src=str(pdf_path))
             chat = lms.Chat(prompt)
             chat.add_user_message([pdf_handle])
 
-            result = model.respond(chat)
+            result = model.respond(chat, config={"temperature": temperature} if temperature is not None else None)
             text = result.content
 
             # Falls Ergebnis leer: Fallback-Prompt versuchen
@@ -938,7 +948,7 @@ def process_pdf_with_direct_model(pdf_path: Path) -> tuple[str, str]:
                 chat = lms.Chat(fallback)
                 pdf_handle = client.prepare_image(src=str(pdf_path))
                 chat.add_user_message([pdf_handle])
-                result = model.respond(chat)
+                result = model.respond(chat, config={"temperature": temperature} if temperature is not None else None)
                 text = result.content
 
             # Post-Processing
@@ -1446,7 +1456,7 @@ def convert_html_tables_in_file(md_path: Path) -> None:
 
 def main():
     """Hauptfunktion: Dateiauswahl, OCR-Verarbeitung, Speichern."""
-    console.print("\n[bold cyan]OCR to Markdown Tool v1.9.2[/bold cyan]\n")
+    console.print("\n[bold cyan]OCR to Markdown Tool v1.9.3[/bold cyan]\n")
 
     table_mode = "-t" in sys.argv
     debug_mode = "-d" in sys.argv
