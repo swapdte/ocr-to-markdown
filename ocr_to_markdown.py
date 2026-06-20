@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-v1.13.1 - OCR zu Markdown Konverter mit TUI-Dateiauswahl
+v1.14.0 - OCR zu Markdown Konverter mit TUI-Dateiauswahl
 
 Verwendet ein LLM (via LM Studio) um Bilddateien und PDFs zu OCR-lesen
 und als Markdown mit Tabellen-Formatierung auszugeben.
@@ -64,6 +64,7 @@ MIN_PDF_DPI = 50
 # LM Studio Konfiguration
 LMSTUDIO_HOST = "127.0.0.1:1234"
 LMSTUDIO_CONTEXT_LENGTH = 20000  # Kontextfenster in Tokens
+LMSTUDIO_SEED = 3502  # Seed für reproduzierbare Ergebnisse
 
 # Bevorzugte OCR-Modelle in Prioritätsreihenfolge
 # Das erste verfügbare Modell aus dieser Liste wird verwendet
@@ -85,8 +86,38 @@ PDF_ONLY_MODELS = {
 MODEL_PROMPTS = {
 }
 
+# Modell-spezifische Load-Konfigurationen (Seed, etc.)
+# Seed wird beim Laden des Modells gesetzt, nicht bei der Vorhersage
+MODEL_LOAD_CONFIGS = {
+    "nanonets-ocr-s": {
+        "contextLength": LMSTUDIO_CONTEXT_LENGTH,
+        "seed": LMSTUDIO_SEED,
+    },
+}
+
+# Jinja Chat-Template für nanonets-ocr-s (ChatML-Format)
+NANONETS_JINJA_TEMPLATE = """{{- if .System -}}
+<|im_start|>system
+{{ .System }}<|im_end|>
+{{- end -}}
+{{- range $i, $_ := .Messages }}
+{{- $last := eq (len (slice $.Messages $i)) 1 -}}
+{{- if eq .Role "user" }}
+<|im_start|>user
+{{ .Content }}
+{{- else if eq .Role "assistant" }}
+<|im_start|>assistant
+{{ if .Content }}{{ .Content }}{{ if not $last }}<|im_end|>
+{{- else -}}<|im_end|>{{- end -}}
+{{- end -}}
+{{- end -}}
+{{- if and (ne .Role "assistant") $last }}
+<|im_start|>assistant
+{{ end -}}
+{{- end }}"""
+
 # Modell-spezifische Konfigurationen (Prediction-Parameter)
-# nanonets-ocr-s: Offizielle Parameter aus der Modell-Doku
+# nanonets-ocr-s: Offizielle Parameter aus der Modell-Doku + Jinja-Template
 MODEL_CONFIGS = {
     "nanonets-ocr-s": {
         "temperature": 0.0,
@@ -94,6 +125,13 @@ MODEL_CONFIGS = {
         "minPSampling": 0.01,
         "stopStrings": ["<|im_start|>", "<|im_end|>"],
         "maxTokens": 2048,
+        "promptTemplate": {
+            "type": "jinja",
+            "stopStrings": ["<|im_start|>", "<|im_end|>"],
+            "jinjaPromptTemplate": {
+                "template": NANONETS_JINJA_TEMPLATE,
+            },
+        },
     },
 }
 
@@ -225,7 +263,8 @@ PROMPT_ARTEFACTS = [
 SYSTEM_PROMPT = "You are a helpful assistant."
 
 # Prompt für OCR von Dokumentenseiten
-OCR_PROMPT = "Extract the text from the above document as if you were reading it naturally. Return the text and tables in markdown format. Return the equations in LaTeX representation."
+# Offizieller Prompt aus der Nanonets-OCR-s Dokumentation
+OCR_PROMPT = """Extract the text from the above document as if you were reading it naturally. Return the tables in html format. Return the equations in LaTeX representation. If there is an image in the document and image caption is not present, add a small description of the image inside the <img></img> tag; otherwise, add the image caption inside <img></img>. Watermarks should be wrapped in brackets. Ex: <watermark>OFFICIAL COPY</watermark>. Page numbers should be wrapped in brackets. Ex: <page_number>14</page_number> or <page_number>9/22</page_number>. Prefer using ☐ and ☑ for check boxes."""
 
 # Fallback-Prompt für schwierige Fälle
 FALLBACK_PROMPT = """Gib den gesamten sichtbaren Text aus. Keine Formatierung."""
@@ -761,7 +800,7 @@ def ocr_page_sync(image_bytes: bytes, page_num: int, is_pdf: bool = False) -> tu
         model = client.llm.model(
             model_name,
             ttl=None,  # Modell bleibt geladen
-            config={"contextLength": LMSTUDIO_CONTEXT_LENGTH},
+            config=MODEL_LOAD_CONFIGS.get(model_name, {"contextLength": LMSTUDIO_CONTEXT_LENGTH}),
         )
 
         # Modell-spezifischen Prompt wählen
@@ -910,7 +949,7 @@ def process_pdf_with_direct_model(pdf_path: Path) -> tuple[str, str]:
             model = client.llm.model(
                 model_name,
                 ttl=None,  # Modell bleibt geladen
-                config={"contextLength": LMSTUDIO_CONTEXT_LENGTH},
+                config=MODEL_LOAD_CONFIGS.get(model_name, {"contextLength": LMSTUDIO_CONTEXT_LENGTH}),
             )
 
             # Modell-spezifischen Prompt wählen
@@ -1136,7 +1175,7 @@ def refine_markdown(content: str) -> str:
             model = client.llm.model(
                 model_name,
                 ttl=None,  # Modell bleibt geladen
-                config={"contextLength": LMSTUDIO_CONTEXT_LENGTH},
+                config=MODEL_LOAD_CONFIGS.get(model_name, {"contextLength": LMSTUDIO_CONTEXT_LENGTH}),
             )
 
             chat = lms.Chat(REFINEMENT_PROMPT)
@@ -1395,7 +1434,7 @@ def convert_html_tables_in_file(md_path: Path) -> None:
             model = client.llm.model(
                 model_name,
                 ttl=None,  # Modell bleibt geladen
-                config={"contextLength": LMSTUDIO_CONTEXT_LENGTH},
+                config=MODEL_LOAD_CONFIGS.get(model_name, {"contextLength": LMSTUDIO_CONTEXT_LENGTH}),
             )
 
             progress.update(
