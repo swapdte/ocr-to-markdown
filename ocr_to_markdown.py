@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-v1.9.0 - OCR zu Markdown Konverter mit TUI-Dateiauswahl
+v1.9.1 - OCR zu Markdown Konverter mit TUI-Dateiauswahl
 
 Verwendet ein LLM (via LM Studio) um Bilddateien und PDFs zu OCR-lesen
 und als Markdown mit Tabellen-Formatierung auszugeben.
@@ -10,6 +10,7 @@ Funktionen:
 - Unterstuetzt PNG, JPG, JPEG und PDF Dateien
 - PDF-only Modelle werden bei Bild-Eingabe automatisch uebersprungen
 - PDFs werden direkt an PDF-only Modelle gesendet (ohne pdftoppm-Konvertierung)
+- Modell-spezifische Prompts (PaddleOCR-VL nutzt "OCR:" statt langem Prompt)
 - Automatische Seiten-Erkennung bei PDFs (via pdftoppm)
 - Automatische Spracherkennung (Deutsch, Englisch, Franzoesisch, Spanisch)
 - Markdown-Formatierung mit Tabellen, Listen, Fett/Kursiv
@@ -77,6 +78,12 @@ MODEL_PREFERENCES = [
 # Diese werden bei Bild-Eingabe automatisch uebersprungen
 PDF_ONLY_MODELS = {
     "paddlepaddle/paddleocr-vl-1.6-gguf/paddleocr-vl-1.6-gguf.gguf",
+}
+
+# Modell-spezifische Prompts
+# PaddleOCR-VL erwartet kurze Task-Prompts wie "OCR:", nicht lange Anweisungen
+MODEL_PROMPTS = {
+    "paddlepaddle/paddleocr-vl-1.6-gguf/paddleocr-vl-1.6-gguf.gguf": "OCR:",
 }
 
 # Woerter fuer automatische Spracherkennung
@@ -770,13 +777,16 @@ def ocr_page_sync(image_bytes: bytes, page_num: int, is_pdf: bool = False) -> tu
             config={"contextLength": LMSTUDIO_CONTEXT_LENGTH},
         )
 
+        # Modell-spezifischen Prompt waehlen
+        prompt = MODEL_PROMPTS.get(model_name, OCR_PROMPT)
+
         # OCR mit Retry bei Chat-Response-Error (max. 2 Versuche)
         text = None
         for attempt in range(2):
             try:
                 # Bild erneut einlesen fuer jeden Versuch
                 image_handle = client.prepare_image(src=tmp_path)
-                chat = lms.Chat(OCR_PROMPT)
+                chat = lms.Chat(prompt)
                 chat.add_user_message([image_handle])
 
                 result = model.respond(chat)
@@ -793,8 +803,10 @@ def ocr_page_sync(image_bytes: bytes, page_num: int, is_pdf: bool = False) -> tu
                     raise
 
         # Falls Ergebnis leer oder sehr kurz: Fallback-Prompt versuchen
+        # Bei PaddleOCR-VL: Kurz-Prompt als Fallback, sonst den generischen Fallback
         if not text or not text.strip() or len(text.strip()) < 10:
-            chat = lms.Chat(FALLBACK_PROMPT)
+            fallback = MODEL_PROMPTS.get(model_name, FALLBACK_PROMPT)
+            chat = lms.Chat(fallback)
             image_handle = client.prepare_image(src=tmp_path)
             chat.add_user_message([image_handle])
             result = model.respond(chat)
@@ -909,9 +921,12 @@ def process_pdf_with_direct_model(pdf_path: Path) -> tuple[str, str]:
                 config={"contextLength": LMSTUDIO_CONTEXT_LENGTH},
             )
 
+            # Modell-spezifischen Prompt waehlen
+            prompt = MODEL_PROMPTS.get(model_name, OCR_PROMPT)
+
             # PDF direkt an das Modell senden (prepare_image unterstuetzt auch PDFs)
             pdf_handle = client.prepare_image(src=str(pdf_path))
-            chat = lms.Chat(OCR_PROMPT)
+            chat = lms.Chat(prompt)
             chat.add_user_message([pdf_handle])
 
             result = model.respond(chat)
@@ -919,7 +934,8 @@ def process_pdf_with_direct_model(pdf_path: Path) -> tuple[str, str]:
 
             # Falls Ergebnis leer: Fallback-Prompt versuchen
             if not text or not text.strip() or len(text.strip()) < 10:
-                chat = lms.Chat(FALLBACK_PROMPT)
+                fallback = MODEL_PROMPTS.get(model_name, FALLBACK_PROMPT)
+                chat = lms.Chat(fallback)
                 pdf_handle = client.prepare_image(src=str(pdf_path))
                 chat.add_user_message([pdf_handle])
                 result = model.respond(chat)
@@ -1430,7 +1446,7 @@ def convert_html_tables_in_file(md_path: Path) -> None:
 
 def main():
     """Hauptfunktion: Dateiauswahl, OCR-Verarbeitung, Speichern."""
-    console.print("\n[bold cyan]OCR to Markdown Tool v1.9.0[/bold cyan]\n")
+    console.print("\n[bold cyan]OCR to Markdown Tool v1.9.1[/bold cyan]\n")
 
     table_mode = "-t" in sys.argv
     debug_mode = "-d" in sys.argv
