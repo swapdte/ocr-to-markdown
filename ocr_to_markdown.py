@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-v1.15.1 - OCR zu Markdown Konverter mit TUI-Dateiauswahl
+v1.16.0 - OCR zu Markdown Konverter mit TUI-Dateiauswahl
 
 Verwendet ein LLM (via LM Studio) um Bilddateien und PDFs zu OCR-lesen
 und als Markdown mit Tabellen-Formatierung auszugeben.
@@ -95,29 +95,67 @@ MODEL_LOAD_CONFIGS = {
     },
 }
 
-# Jinja Chat-Template für nanonets-ocr-s (ChatML-Format, LM Studio MiniJinja)
-# Hinweis: Wird nicht über die API gesendet, sondern muss in LM Studio GUI konfiguriert werden
-# (My Models → ⚙️ → Prompt Template → Jinja Template)
-NANONETS_JINJA_TEMPLATE = """{%- for message in messages -%}
-{%- if message.role == "system" -%}
-<|im_start|>system
-{{ message.content }}<|im_end|>
-{%- elif message.role == "user" -%}
-<|im_start|>user
-{{ message.content }}
-{%- elif message.role == "assistant" -%}
-<|im_start|>assistant
-{{ message.content }}<|im_end|>
-{%- endif -%}
+# Jinja Chat-Template für nanonets-ocr-s (Qwen2.5-VL ChatML, Unsloth)
+# Enthält Bild-Injektion (<|vision_start|><|image_pad|><|vision_end|>)
+# und den OCR-Prompt fest eingebettet
+NANONETS_JINJA_TEMPLATE = """{#- Copyright 2025-present the Unsloth team. All rights reserved. #}
+{#- Licensed under the Apache License, Version 2.0 (the "License") #}
+{%- set image_count = namespace(value=0) -%}
+{%- set video_count = namespace(value=0) -%}
+{%- set text_count  = namespace(value=0) -%}
+{%- for message in messages -%}
+	{%- if loop.first and message["role"] != "system" -%}
+		{{- "<|im_start|>system\\nYou are a precise OCR engine.<|im_end|>\\n" -}}
+	{%- endif -%}
+	{{- "<|im_start|>" -}}
+	{{- message["role"] -}}
+	{{- "\\n" -}}
+	{%- if message["content"] is string -%}
+		{{- message["content"] -}}
+		{{- "<|im_end|>\\n" -}}
+	{%- else -%}
+		{#- Check if text field is present #}
+		{%- set text_count.value = 0 -%}
+		{%- for content in message["content"] -%}
+			{%- if content["type"] == "image" or "image" in content or "image_url" in content -%}
+				{%- set image_count.value = image_count.value + 1 -%}
+				{%- if add_vision_id -%}
+					{{- "Picture " -}}
+					{{- image_count.value -}}
+					{{- ": " -}}
+				{%- endif -%}
+				{{- "<|vision_start|><|image_pad|><|vision_end|>" -}}
+			{%- elif content["type"] == "video" or "video" in content -%}
+				{%- set video_count.value = video_count.value + 1 -%}
+				{%- if add_vision_id -%}
+					{{- "Video " -}}
+					{{- video_count.value -}}
+					{{- ": " -}}
+				{%- endif -%}
+				{{- "<|vision_start|><|video_pad|><|vision_end|>" -}}
+			{%- elif "text" in content -%}
+				{{- content["text"]|string -}}
+				{%- if content["text"]|length != 0 -%}
+					{%- set text_count.value = text_count.value + 1 -%}
+				{%- endif -%}
+			{%- endif -%}
+		{%- endfor -%}
+		{#- If text field seen, add a newline #}
+		{%- if text_count.value != 0 -%}
+			{{- "\\n" -}}
+		{%- endif -%}
+		{{- "Extract the text from the above document as if you were reading it naturally. Return the all text and tables in markdown format." -}}
+		{{- "<|im_end|>\\n" -}}
+	{%- endif -%}
 {%- endfor -%}
 {%- if add_generation_prompt -%}
-<|im_start|>assistant
-{%- endif -%}"""
+	{{- "<|im_start|>assistant\\n" -}}
+{%- endif -%}
+{#- Copyright 2025-present the Unsloth team. All rights reserved. #}
+{#- Licensed under the Apache License, Version 2.0 (the "License") #}"""
 
 # Modell-spezifische Konfigurationen (Prediction-Parameter)
-# nanonets-ocr-s: Parameter aus ocr.preset.json
-# promptTemplate wird NICHT über die API gesendet (bricht Bild-Injektion),
-# muss in LM Studio GUI konfiguriert werden
+# nanonets-ocr-s: Parameter aus ocr.preset.json + Jinja-Template
 MODEL_CONFIGS = {
     "nanonets-ocr-s": {
         "temperature": 0,
@@ -127,6 +165,13 @@ MODEL_CONFIGS = {
         "topKSampling": -1,
         "maxTokens": 1500,
         "stopStrings": ["<|im_start|>", "<|im_end|>"],
+        "promptTemplate": {
+            "type": "jinja",
+            "stopStrings": ["<|im_start|>", "<|im_end|>"],
+            "jinjaPromptTemplate": {
+                "template": NANONETS_JINJA_TEMPLATE,
+            },
+        },
     },
 }
 

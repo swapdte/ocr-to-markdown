@@ -1,0 +1,55 @@
+{#- Copyright 2025-present the Unsloth team. All rights reserved. #}
+{#- Licensed under the Apache License, Version 2.0 (the "License") #}
+{%- set image_count = namespace(value=0) -%}
+{%- set video_count = namespace(value=0) -%}
+{%- set text_count  = namespace(value=0) -%}
+{%- for message in messages -%}
+	{%- if loop.first and message["role"] != "system" -%}
+		{{- "<|im_start|>system\nYou are a helpful assistant.<|im_end|>\n" -}}
+	{%- endif -%}
+	{{- "<|im_start|>" -}}
+	{{- message["role"] -}}
+	{{- "\n" -}}
+	{%- if message["content"] is string -%}
+		{{- message["content"] -}}
+		{{- "<|im_end|>\n" -}}
+	{%- else -%}
+		{#- Check if text field is present #}
+		{%- set text_count.value = 0 -%}
+		{%- for content in message["content"] -%}
+			{%- if content["type"] == "image" or "image" in content or "image_url" in content -%}
+				{%- set image_count.value = image_count.value + 1 -%}
+				{%- if add_vision_id -%}
+					{{- "Picture " -}}
+					{{- image_count.value -}}
+					{{- ": " -}}
+				{%- endif -%}
+				{{- "<|vision_start|><|image_pad|><|vision_end|>" -}}
+			{%- elif content["type"] == "video" or "video" in content -%}
+				{%- set video_count.value = video_count.value + 1 -%}
+				{%- if add_vision_id -%}
+					{{- "Video " -}}
+					{{- video_count.value -}}
+					{{- ": " -}}
+				{%- endif -%}
+				{{- "<|vision_start|><|video_pad|><|vision_end|>" -}}
+			{%- elif "text" in content -%}
+				{{- content["text"]|string -}}
+				{%- if content["text"]|length != 0 -%}
+					{%- set text_count.value = text_count.value + 1 -%}
+				{%- endif -%}
+			{%- endif -%}
+		{%- endfor -%}
+		{#- If text field seen, add a newline #}
+		{%- if text_count.value != 0 -%}
+			{{- "\n" -}}
+		{%- endif -%}
+		{{- "Extract the text from the above document as if you were reading it naturally. Return the tables in html format. Return the equations in LaTeX representation. If there is an image in the document and image caption is not present, add a small description of the image inside the <img></img> tag; otherwise, add the image caption inside <img></img>. Watermarks should be wrapped in brackets. Ex: <watermark>OFFICIAL COPY</watermark>. Page numbers should be wrapped in brackets. Ex: <page_number>14</page_number> or <page_number>9/22</page_number>. Prefer using ☐ and ☑ for check boxes." -}}
+		{{- "<|im_end|>\n" -}}
+	{%- endif -%}
+{%- endfor -%}
+{%- if add_generation_prompt -%}
+	{{- "<|im_start|>assistant\n" -}}
+{%- endif -%}
+{#- Copyright 2025-present the Unsloth team. All rights reserved. #}
+{#- Licensed under the Apache License, Version 2.0 (the "License") #}
