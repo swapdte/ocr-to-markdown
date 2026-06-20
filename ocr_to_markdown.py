@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-v1.9.3 - OCR zu Markdown Konverter mit TUI-Dateiauswahl
+v1.11.0 - OCR zu Markdown Konverter mit TUI-Dateiauswahl
 
 Verwendet ein LLM (via LM Studio) um Bilddateien und PDFs zu OCR-lesen
 und als Markdown mit Tabellen-Formatierung auszugeben.
@@ -10,7 +10,8 @@ Funktionen:
 - Unterstuetzt PNG, JPG, JPEG und PDF Dateien
 - PDF-only Modelle werden bei Bild-Eingabe automatisch uebersprungen
 - PDFs werden direkt an PDF-only Modelle gesendet (ohne pdftoppm-Konvertierung)
-- Modell-spezifische Prompts und Temperatur-Einstellungen
+- Modell-spezifische Konfigurationen (Temperatur, Top-P, Repeat Penalty, Max Tokens)
+- System-Prompt fuer OCR-Modelle
 - Automatische Seiten-Erkennung bei PDFs (via pdftoppm)
 - Automatische Spracherkennung (Deutsch, Englisch, Franzoesisch, Spanisch)
 - Markdown-Formatierung mit Tabellen, Listen, Fett/Kursiv
@@ -61,13 +62,12 @@ MIN_PDF_DPI = 50
 
 # LM Studio Konfiguration
 LMSTUDIO_HOST = "127.0.0.1:1234"
-LMSTUDIO_TTL = 900  # Modell nach 15 Minuten Inaktivitaet entladen
-LMSTUDIO_CONTEXT_LENGTH = 8000  # Kontextfenster in Tokens
+LMSTUDIO_CONTEXT_LENGTH = 20000  # Kontextfenster in Tokens
 
 # Bevorzugte OCR-Modelle in Prioritaetsreihenfolge
 # Das erste verfuegbare Modell aus dieser Liste wird verwendet
 MODEL_PREFERENCES = [
-    "glm-ocr",
+    "nanonets-ocr-s",
     "allenai/olmocr-2-7b",
     "gemma-4-e4b-it",
     "gemma-4-e2b-it",
@@ -77,18 +77,23 @@ MODEL_PREFERENCES = [
 # Modelle die nur PDF-Input verarbeiten koennen (keine Bilder)
 # Diese werden bei Bild-Eingabe automatisch uebersprungen
 PDF_ONLY_MODELS = {
-    "glm-ocr",
+    "nanonets-ocr-s",
 }
 
 # Modell-spezifische Prompts
-# (glm-ocr nutzt den generischen OCR_PROMPT, keine Sondereinstellung noetig)
+# (nanonets-ocr-s nutzt den generischen OCR_PROMPT, keine Sondereinstellung noetig)
 MODEL_PROMPTS = {
 }
 
-# Modell-spezifische Temperatur-Einstellungen
-# glm-ocr funktioniert am besten mit Temperatur 0 (deterministische Ausgabe)
-MODEL_TEMPERATURES = {
-    "glm-ocr": 0.0,
+# Modell-spezifische Konfigurationen (Prediction-Parameter)
+# nanonets-ocr-s: Temperatur 0, Repeat Penalty 1, Top-P 0.95, Max Tokens 2048
+MODEL_CONFIGS = {
+    "nanonets-ocr-s": {
+        "temperature": 0.0,
+        "repeatPenalty": 1.0,
+        "topP": 0.95,
+        "maxTokens": 2048,
+    },
 }
 
 # Woerter fuer automatische Spracherkennung
@@ -215,9 +220,76 @@ PROMPT_ARTEFACTS = [
     "ich erkenne folgenden",
 ]
 
+# System-Prompt fuer OCR-Modelle
+SYSTEM_PROMPT = "You are a precise OCR engine."
+
 # Prompt fuer OCR von DIN A4 Dokumenten (Briefe und Rechnungen)
 # Deckt komplexe Formatierungen, Tabellen, Handschrift und QR-Codes ab
-OCR_PROMPT = """Convert this document page to Markdown. Extract all text, tables as Markdown tables, formulas, and preserve the document structure. Start the output with "# Seite N" where N is the page number. Do not add explanations."""
+OCR_PROMPT = """Du bist ein Praezisions-OCR-Scanner. Deine Aufgabe ist es, dieses Bild ZEICHEN FUER ZEICHEN exakt zu transkribieren.
+
+## Absolute Grundregeln
+1. JEDER einzelne Buchstabe, JEDER Pixel-Text, JEDER Stempel, JEDER Wasserzeichen-Text muss im Ergebnis enthalten sein. NULL Ausnahmen. Null Kompromisse.
+2. Gib NUR den erkannten Text zurueck. Keine Kommentare, keine Erklaerungen.
+3. Pruefe das gesamte Bild: horizontalen Text, gedrehten Text (90/180/270 Grad), vertikalen Text, schraegen Text, Signaturen, Stempel, Wasserzeichen, Fussnoten, Randnotizen, Kopfzeilen, Fusszeilen.
+4. Zahlen, Betraege, IBANs, Steuernummern, Rechnungsnummern, Datumsformate muessen exakt wie im Original sein. Kein Komma oder Punkt darf hinzugefuegt oder weggelassen werden.
+5. Die Ausgabe MUSS gueltiges Markdown sein.
+6. Wenn du dir bei einem Zeichen unsicher bist: Gib die bestmoegliche Lesung an. Lass KEIN Zeichen aus. Lieber ein ungenaues Zeichen als gar keins.
+
+## Komplexe Formatierung nachbauen
+- Hauptueberschriften: `# Titel`
+- Abschnittsueberschriften: `## Abschnitt`
+- Unterueberschriften: `### Unterabschnitt`
+- Fettdruck: `**wichtiges Wort**`
+- Kursiv: *hervorgehoben*
+- Unterstrichen: `<u>unterstrichen</u>`
+- Durchgestrichen: `~~durchgestrichen~~`
+- Aufzaehlungen: `- Eintrag` oder `1. erster Eintrag`
+- Trennlinien zwischen logischen Bloecken: `---`
+- Absaetze durch eine Leerzeile trennen
+- Schriftgroessen: Ueberschriften groesser als Fliesstext, Fussnoten kleiner
+- Spaltenlayout: Linker Spalte zuerst, dann rechter Spalte
+- Boxen/Rahmen: Umrande Inhalte als Blockquote `>` oder erhalte die visuelle Struktur
+- Listen-Einrueckungen: Behalte die Hierarchieebenen bei (verschachtelte Listen)
+
+## Tabellen
+Erkenne tabellarische Strukturen (Raster, Linien, Spalten) und formatiere sie als Markdown-Tabelle mit korrekter Formatierung.
+
+Beispiel:
+| Artikel | Menge | Einzelpreis | Gesamtpreis |
+|---------|-------|-------------|-------------|
+| Widget A | 2 | 15,00 EUR | 30,00 EUR |
+| Widget B | 1 | 8,50 EUR | 8,50 EUR |
+| | | Summe: | 38,50 EUR |
+
+Tabellen-Regeln:
+- Jede Tabellenzeile muss die gleiche Anzahl Spalten haben
+- Leerzellen als leere Zelle lassen (nicht mit Bindestrich fuellen)
+- Verbundene Zellen: Inhalt in die erste Spalte, restliche leer
+- Trennzeile nach der Kopfzeile: |---|---|---| (Mindestens 3 Bindestriche pro Spalte)
+- Tabellen MUESSEN als Markdown mit | Spalte | Format geschrieben werden
+- VERBOTEN: Keine HTML-Tabellen (<table>, <tr>, <td>, <th>, <thead>, <tbody>). ABSOLUT KEINE HTML-Tags fuer Tabellen. Verwende ausschliesslich Markdown-Syntax mit Pipe-Zeichen (|)
+
+## Handschrift
+- Erkenne handschriftliche Notizen, Unterschriften, Randbemerkungen und Stempeltext
+- Transkribiere Handschrift so genau wie moeglich
+- Setze transkribierte Handschrift IMMER in doppelte Anfuehrungszeichen: "handschriftlicher Text"
+- Wenn Handschrift unleserlich ist: Gib bestmoegliche Lesung in "Anfuehrungszeichen" mit [?] fuer unsichere Stellen
+
+## Vollstaendigkeit
+- Lies das Bild ZWEI MAL bevor du ausgibst: Erst grobe Uebersicht, dann zeichenweise Pruefung
+- Kein Absatz, keine Zeile, kein Wort darf im Original vorhanden aber im Ergebnis fehlen
+- Ueberpruefe besonders: Zahlen in Tabellen, IBAN-Zeichenketten, Bruchzahlen, hochgestellte Zeichen (m2, m3, etc.)
+- Wenn Text unleserlich ist: Gib die bestmoegliche Interpretation mit [?] markiert an. Lass NICHTS komplett weg.
+- Zaehle nach der Ausgabe alle Zeichen im Original und vergleiche mit deiner Ausgabe. Fehlende Zeichen sind ein FEHLER.
+- Pruefe ECKEN und RAENDER: Oft stehen dort wichtige Informationen (Stempel, Wasserzeichen, Fussnoten)
+- Pruefe ZWISCHENRAEUME: Kleingedrucktes, Fussnotenzeilen, Seitenzahlen
+- PRUEFE NOCHMALS: Scanne dein Ergebnis von OBEN nach UNTEN und vergleiche zeichenweise mit dem Original
+
+## WICHTIG
+- Beginne sofort mit dem ersten erkannten Zeichen. Keine Einleitung.
+- Beende mit dem letzten erkannten Zeichen. Keine Zusammenfassung.
+- Kein einziges Zeichen im Original darf im Ergebnis fehlen.
+- WIRKUNGS-PRUEFUNG: Wenn das Original 100 Zeichen hat, muss deine Ausgabe mindestens genauso viele Zeichen enthalten. Fehlende Zeichen bedeuten FEHLGESCHLAGENE OCR."""
 
 # Fallback-Prompt fuer schwierige Faelle
 FALLBACK_PROMPT = """Gib den gesamten sichtbaren Text aus. Keine Formatierung."""
@@ -714,14 +786,14 @@ def ocr_page_sync(image_bytes: bytes, page_num: int, is_pdf: bool = False) -> tu
         model_name = select_ocr_model(client, is_pdf=is_pdf)
         model = client.llm.model(
             model_name,
-            ttl=LMSTUDIO_TTL,
+            ttl=None,  # Modell bleibt geladen
             config={"contextLength": LMSTUDIO_CONTEXT_LENGTH},
         )
 
         # Modell-spezifischen Prompt waehlen
         prompt = MODEL_PROMPTS.get(model_name, OCR_PROMPT)
-        # Modell-spezifische Temperatur waehlen (Default: None = LM Studio Default)
-        temperature = MODEL_TEMPERATURES.get(model_name)
+        # Modell-spezifische Konfiguration waehlen (Temperatur, Top-P, etc.)
+        model_config = MODEL_CONFIGS.get(model_name, {})
 
         # OCR mit Retry bei Chat-Response-Error (max. 2 Versuche)
         text = None
@@ -729,10 +801,10 @@ def ocr_page_sync(image_bytes: bytes, page_num: int, is_pdf: bool = False) -> tu
             try:
                 # Bild erneut einlesen fuer jeden Versuch
                 image_handle = client.prepare_image(src=tmp_path)
-                chat = lms.Chat(prompt)
-                chat.add_user_message([image_handle])
+                chat = lms.Chat(SYSTEM_PROMPT)
+                chat.add_user_message(prompt, images=[image_handle])
 
-                result = model.respond(chat, config={"temperature": temperature} if temperature is not None else None)
+                result = model.respond(chat, config=model_config if model_config else None)
                 text = result.content
                 break  # Erfolgreich, kein Retry noetig
             except Exception as e:
@@ -749,10 +821,10 @@ def ocr_page_sync(image_bytes: bytes, page_num: int, is_pdf: bool = False) -> tu
         # Modell-spezifischer Kurz-Prompt als Fallback, sonst der generische Fallback
         if not text or not text.strip() or len(text.strip()) < 10:
             fallback = MODEL_PROMPTS.get(model_name, FALLBACK_PROMPT)
-            chat = lms.Chat(fallback)
             image_handle = client.prepare_image(src=tmp_path)
-            chat.add_user_message([image_handle])
-            result = model.respond(chat, config={"temperature": temperature} if temperature is not None else None)
+            chat = lms.Chat(SYSTEM_PROMPT)
+            chat.add_user_message(fallback, images=[image_handle])
+            result = model.respond(chat, config=model_config if model_config else None)
             text = result.content
 
         # Post-Processing: Prompt-Artefakte entfernen, kurze Zeilen filtern,
@@ -839,7 +911,7 @@ def process_pdf_with_direct_model(pdf_path: Path) -> tuple[str, str]:
     """Verarbeite ein PDF direkt mit einem PDF-faehigen Modell (ohne pdftoppm).
 
     Sendet das gesamte PDF an ein Modell das PDF-Input direkt verarbeiten kann
-    (z.B. glm-ocr). Keine Konvertierung zu PNG noetig.
+    (z.B. nanonets-ocr-s). Keine Konvertierung zu PNG noetig.
 
     Args:
         pdf_path: Pfad zur PDF-Datei.
@@ -860,30 +932,30 @@ def process_pdf_with_direct_model(pdf_path: Path) -> tuple[str, str]:
             model_name = select_ocr_model(client, is_pdf=True)
             model = client.llm.model(
                 model_name,
-                ttl=LMSTUDIO_TTL,
+                ttl=None,  # Modell bleibt geladen
                 config={"contextLength": LMSTUDIO_CONTEXT_LENGTH},
             )
 
             # Modell-spezifischen Prompt waehlen
             prompt = MODEL_PROMPTS.get(model_name, OCR_PROMPT)
-            # Modell-spezifische Temperatur waehlen (Default: None = LM Studio Default)
-            temperature = MODEL_TEMPERATURES.get(model_name)
+            # Modell-spezifische Konfiguration waehlen (Temperatur, Top-P, etc.)
+            model_config = MODEL_CONFIGS.get(model_name, {})
 
             # PDF direkt an das Modell senden (prepare_image unterstuetzt auch PDFs)
             pdf_handle = client.prepare_image(src=str(pdf_path))
-            chat = lms.Chat(prompt)
-            chat.add_user_message([pdf_handle])
+            chat = lms.Chat(SYSTEM_PROMPT)
+            chat.add_user_message(prompt, images=[pdf_handle])
 
-            result = model.respond(chat, config={"temperature": temperature} if temperature is not None else None)
+            result = model.respond(chat, config=model_config if model_config else None)
             text = result.content
 
             # Falls Ergebnis leer: Fallback-Prompt versuchen
             if not text or not text.strip() or len(text.strip()) < 10:
                 fallback = MODEL_PROMPTS.get(model_name, FALLBACK_PROMPT)
-                chat = lms.Chat(fallback)
                 pdf_handle = client.prepare_image(src=str(pdf_path))
-                chat.add_user_message([pdf_handle])
-                result = model.respond(chat, config={"temperature": temperature} if temperature is not None else None)
+                chat = lms.Chat(SYSTEM_PROMPT)
+                chat.add_user_message(fallback, images=[pdf_handle])
+                result = model.respond(chat, config=model_config if model_config else None)
                 text = result.content
 
             # Post-Processing
@@ -1086,7 +1158,7 @@ def refine_markdown(content: str) -> str:
             model_name = select_ocr_model(client, is_pdf=False)
             model = client.llm.model(
                 model_name,
-                ttl=LMSTUDIO_TTL,
+                ttl=None,  # Modell bleibt geladen
                 config={"contextLength": LMSTUDIO_CONTEXT_LENGTH},
             )
 
@@ -1345,7 +1417,7 @@ def convert_html_tables_in_file(md_path: Path) -> None:
             model_name = prepare_table_conversion_model(client)
             model = client.llm.model(
                 model_name,
-                ttl=LMSTUDIO_TTL,
+                ttl=None,  # Modell bleibt geladen
                 config={"contextLength": LMSTUDIO_CONTEXT_LENGTH},
             )
 
