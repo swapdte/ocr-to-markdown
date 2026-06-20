@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-v1.14.0 - OCR zu Markdown Konverter mit TUI-Dateiauswahl
+v1.14.1 - OCR zu Markdown Konverter mit TUI-Dateiauswahl
 
 Verwendet ein LLM (via LM Studio) um Bilddateien und PDFs zu OCR-lesen
 und als Markdown mit Tabellen-Formatierung auszugeben.
@@ -95,26 +95,22 @@ MODEL_LOAD_CONFIGS = {
     },
 }
 
-# Jinja Chat-Template für nanonets-ocr-s (ChatML-Format)
-NANONETS_JINJA_TEMPLATE = """{{- if .System -}}
+# Jinja Chat-Template für nanonets-ocr-s (ChatML-Format, LM Studio MiniJinja)
+NANONETS_JINJA_TEMPLATE = """{%- for message in messages -%}
+{%- if message.role == "system" -%}
 <|im_start|>system
-{{ .System }}<|im_end|>
-{{- end -}}
-{{- range $i, $_ := .Messages }}
-{{- $last := eq (len (slice $.Messages $i)) 1 -}}
-{{- if eq .Role "user" }}
+{{ message.content }}<|im_end|>
+{%- elif message.role == "user" -%}
 <|im_start|>user
-{{ .Content }}
-{{- else if eq .Role "assistant" }}
+{{ message.content }}
+{%- elif message.role == "assistant" -%}
 <|im_start|>assistant
-{{ if .Content }}{{ .Content }}{{ if not $last }}<|im_end|>
-{{- else -}}<|im_end|>{{- end -}}
-{{- end -}}
-{{- end -}}
-{{- if and (ne .Role "assistant") $last }}
+{{ message.content }}<|im_end|>
+{%- endif -%}
+{%- endfor -%}
+{%- if add_generation_prompt -%}
 <|im_start|>assistant
-{{ end -}}
-{{- end }}"""
+{%- endif -%}"""
 
 # Modell-spezifische Konfigurationen (Prediction-Parameter)
 # nanonets-ocr-s: Offizielle Parameter aus der Modell-Doku + Jinja-Template
