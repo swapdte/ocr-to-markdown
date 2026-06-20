@@ -1,0 +1,9 @@
+{
+    "stop": [
+        "<|im_start|>",
+        "<|im_end|>"
+    ],
+    "temperature": 0.0,
+    "min_p" : 0.01,
+    "repeat_penalty" : 1.0
+}

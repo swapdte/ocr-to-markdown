@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-v1.13.0 - OCR zu Markdown Konverter mit TUI-Dateiauswahl
+v1.13.1 - OCR zu Markdown Konverter mit TUI-Dateiauswahl
 
 Verwendet ein LLM (via LM Studio) um Bilddateien und PDFs zu OCR-lesen
 und als Markdown mit Tabellen-Formatierung auszugeben.
@@ -86,12 +86,13 @@ MODEL_PROMPTS = {
 }
 
 # Modell-spezifische Konfigurationen (Prediction-Parameter)
-# nanonets-ocr-s: Temperatur 0.1, Repeat Penalty 1, Top-P 0.95, Max Tokens 2048
+# nanonets-ocr-s: Offizielle Parameter aus der Modell-Doku
 MODEL_CONFIGS = {
     "nanonets-ocr-s": {
-        "temperature": 0.1,
+        "temperature": 0.0,
         "repeatPenalty": 1.0,
-        "topP": 0.95,
+        "minPSampling": 0.01,
+        "stopStrings": ["<|im_start|>", "<|im_end|>"],
         "maxTokens": 2048,
     },
 }
