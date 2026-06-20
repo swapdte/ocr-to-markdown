@@ -9,6 +9,7 @@ Der OCR-Text wird nachbearbeitet fuer bessere Formatierung und Rechtschreibung.
 Funktionen:
 - Unterstuetzt PNG, JPG, JPEG und PDF Dateien
 - PDF-only Modelle werden bei Bild-Eingabe automatisch uebersprungen
+- PDFs werden direkt an PDF-only Modelle gesendet (ohne pdftoppm-Konvertierung)
 - Automatische Seiten-Erkennung bei PDFs (via pdftoppm)
 - Automatische Spracherkennung (Deutsch, Englisch, Franzoesisch, Spanisch)
 - Markdown-Formatierung mit Tabellen, Listen, Fett/Kursiv
@@ -879,10 +880,113 @@ def cleanup_ocr_pages(directory: Path) -> None:
         console.print(f"[dim]Geloescht: {ocr_file.name}[/dim]")
 
 
+def process_pdf_with_direct_model(pdf_path: Path) -> tuple[str, str]:
+    """Verarbeite ein PDF direkt mit einem PDF-faehigen Modell (ohne pdftoppm).
+
+    Sendet das gesamte PDF an ein Modell das PDF-Input direkt verarbeiten kann
+    (z.B. paddleocr-vl). Keine Konvertierung zu PNG noetig.
+
+    Args:
+        pdf_path: Pfad zur PDF-Datei.
+
+    Returns:
+        Ein Tuple aus (erkannte_sprache, gesamter_text_inhalt).
+    """
+    with Progress(
+        SpinnerColumn(),
+        TextColumn("[progress.description]{task.description}"),
+        console=console,
+    ) as progress:
+        task = progress.add_task("[cyan]Verarbeite PDF direkt...[/cyan]")
+        progress.update(task, description="[yellow]OCR laeuft (direkter PDF-Modus)...[/yellow]")
+
+        try:
+            client = lms.Client(api_host=LMSTUDIO_HOST)
+            model_name = select_ocr_model(client, is_pdf=True)
+            model = client.llm.model(
+                model_name,
+                ttl=LMSTUDIO_TTL,
+                config={"contextLength": LMSTUDIO_CONTEXT_LENGTH},
+            )
+
+            # PDF direkt an das Modell senden (prepare_image unterstuetzt auch PDFs)
+            pdf_handle = client.prepare_image(src=str(pdf_path))
+            chat = lms.Chat(OCR_PROMPT)
+            chat.add_user_message([pdf_handle])
+
+            result = model.respond(chat)
+            text = result.content
+
+            # Falls Ergebnis leer: Fallback-Prompt versuchen
+            if not text or not text.strip() or len(text.strip()) < 10:
+                chat = lms.Chat(FALLBACK_PROMPT)
+                pdf_handle = client.prepare_image(src=str(pdf_path))
+                chat.add_user_message([pdf_handle])
+                result = model.respond(chat)
+                text = result.content
+
+            # Post-Processing
+            content = clean_ocr_output(text)
+            content = filter_short_lines(content)
+            content = remove_all_duplicates(content)
+
+            language = detect_language(content)
+
+            progress.update(task, description="[green]PDF direkt verarbeitet[/green]")
+            return language, content
+
+        except Exception as e:
+            progress.update(task, description=f"[red]Fehler bei direkter PDF-Verarbeitung: {e}[/red]")
+            console.print(f"[red]Fehler bei direkter PDF-Verarbeitung: {e}[/red]")
+            raise
+
+
 def process_pdf(pdf_path: Path) -> tuple[str, str]:
+    """Verarbeite ein PDF - automatisch den besten Modus waehlen.
+
+    Prueft ob ein PDF-only Modell verfuegbar ist. Wenn ja, wird das PDF
+    direkt an das Modell gesendet (schneller, keine pdftoppm noetig).
+    Andernfalls wird das PDF zu PNG konvertiert und seitenweise verarbeitet.
+
+    Args:
+        pdf_path: Pfad zur PDF-Datei.
+
+    Returns:
+        Ein Tuple aus (erkannte_sprache, gesamter_text_inhalt).
+    """
+    # Pruefen ob ein PDF-only Modell verfuegbar ist
+    try:
+        client = lms.Client(api_host=LMSTUDIO_HOST)
+        downloaded = client.list_downloaded_models()
+        available = {m.path.lower() for m in downloaded}
+
+        pdf_model_available = False
+        for preferred in MODEL_PREFERENCES:
+            if preferred in PDF_ONLY_MODELS:
+                for avail_path in available:
+                    if preferred.lower() in avail_path:
+                        pdf_model_available = True
+                        break
+                break  # Nur das erste PDF-only Modell pruefen
+    except Exception:
+        pdf_model_available = False
+
+    if pdf_model_available:
+        console.print("[cyan]PDF-only Modell verfuegbar - direkter PDF-Modus[/cyan]")
+        try:
+            return process_pdf_with_direct_model(pdf_path)
+        except Exception as e:
+            console.print(f"[yellow]Direkter PDF-Modus fehlgeschlagen: {e}[/yellow]")
+            console.print("[yellow]Fallback: Konvertiere PDF zu PNG...[/yellow]")
+
+    # Fallback: PDF zu PNG konvertieren und seitenweise verarbeiten
+    return process_pdf_with_pdftoppm(pdf_path)
+
+
+def process_pdf_with_pdftoppm(pdf_path: Path) -> tuple[str, str]:
     """Verarbeite alle Seiten eines PDFs einzeln mit pdftoppm.
 
-    Konvertiert das PDF zunaechst zu PNG-Seiten, führt dann auf
+    Konvertiert das PDF zunaechst zu PNG-Seiten, fuehrt dann auf
     jeder Seite einzeln die OCR durch und fuegt die Ergebnisse
     zusammen. Jede Seite wird mit einer Markierung versehen.
 
