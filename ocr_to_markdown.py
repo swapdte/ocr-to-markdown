@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-v1.12.0 - OCR zu Markdown Konverter mit TUI-Dateiauswahl
+v1.13.0 - OCR zu Markdown Konverter mit TUI-Dateiauswahl
 
 Verwendet ein LLM (via LM Studio) um Bilddateien und PDFs zu OCR-lesen
 und als Markdown mit Tabellen-Formatierung auszugeben.
@@ -9,7 +9,7 @@ Der OCR-Text wird nachbearbeitet für bessere Formatierung und Rechtschreibung.
 
 Funktionen:
 - Unterstützt PNG, JPG, JPEG und PDF Dateien
-- PDF-only Modelle werden bei Bild-Eingabe automatisch übersprungen
+- PDF-only Modelle: Bilder werden automatisch zu PDF konvertiert
 - PDFs werden direkt an PDF-only Modelle gesendet (ohne pdftoppm-Konvertierung)
 - Modell-spezifische Konfigurationen (Temperatur, Top-P, Repeat Penalty, Max Tokens)
 - System-Prompt für OCR-Modelle
@@ -75,8 +75,7 @@ MODEL_PREFERENCES = [
     "qwen3.5-9b",
 ]
 
-# Modelle die nur PDF-Input verarbeiten können (keine Bilder)
-# Diese werden bei Bild-Eingabe automatisch übersprungen
+# Modelle die nur PDF-Input verarbeiten können (Bilder werden konvertiert)
 PDF_ONLY_MODELS = {
     "nanonets-ocr-s",
 }
@@ -87,10 +86,10 @@ MODEL_PROMPTS = {
 }
 
 # Modell-spezifische Konfigurationen (Prediction-Parameter)
-# nanonets-ocr-s: Temperatur 0, Repeat Penalty 1, Top-P 0.95, Max Tokens 2048
+# nanonets-ocr-s: Temperatur 0.1, Repeat Penalty 1, Top-P 0.95, Max Tokens 2048
 MODEL_CONFIGS = {
     "nanonets-ocr-s": {
-        "temperature": 0.0,
+        "temperature": 0.1,
         "repeatPenalty": 1.0,
         "topP": 0.95,
         "maxTokens": 2048,
@@ -225,8 +224,7 @@ PROMPT_ARTEFACTS = [
 SYSTEM_PROMPT = "You are a helpful assistant."
 
 # Prompt für OCR von Dokumentenseiten
-# Offizieller Prompt aus der Nanonets-OCR-s Dokumentation
-OCR_PROMPT = """Extract the text from the above document as if you were reading it naturally. Return the tables in html format. Return the equations in LaTeX representation. If there is an image in the document and image caption is not present, add a small description of the image inside the <img></img> tag; otherwise, add the image caption inside <img></img>. Watermarks should be wrapped in brackets. Ex: <watermark>OFFICIAL COPY</watermark>. Page numbers should be wrapped in brackets. Ex: <page_number>14</page_number> or <page_number>9/22</page_number>. Prefer using ☐ and ☑ for check boxes."""
+OCR_PROMPT = "Extract the text from the above document as if you were reading it naturally. Return the text and tables in markdown format. Return the equations in LaTeX representation."
 
 # Fallback-Prompt für schwierige Fälle
 FALLBACK_PROMPT = """Gib den gesamten sichtbaren Text aus. Keine Formatierung."""
@@ -641,13 +639,13 @@ def select_ocr_model(client: lms.Client, is_pdf: bool = False) -> str:
 
     Prüft welche der bevorzugten Modelle (MODEL_PREFERENCES) in LM Studio
     heruntergeladen sind und wählt das Modell mit höchster Priorität.
-    PDF-only Modelle werden übersprungen wenn is_pdf=False (Bilder).
+    PDF-only Modelle werden berücksichtigt (Bilder werden bei Bedarf konvertiert).
     Falls das Modell bereits geladen ist, wird es zuerst entladen um einen
     sauberen OCR-Durchlauf zu garantieren.
 
     Args:
         client: Verbundener LM Studio Client.
-        is_pdf: True wenn PDF verarbeitet wird (PDF-only Modelle erlaubt).
+        is_pdf: True wenn PDF verarbeitet wird (PDF-only Modelle werden bevorzugt).
 
     Returns:
         Die Modellkennung des ausgewählten Modells.
@@ -660,9 +658,6 @@ def select_ocr_model(client: lms.Client, is_pdf: bool = False) -> str:
     selected = None
     # Bevorzugtes Modell in Prioritätsreihenfolge suchen
     for preferred in MODEL_PREFERENCES:
-        # PDF-only Modelle überspringen bei Bild-Eingabe
-        if not is_pdf and preferred in PDF_ONLY_MODELS:
-            continue
         for avail_path in available:
             if preferred.lower() in avail_path:
                 selected = preferred
@@ -694,6 +689,40 @@ def select_ocr_model(client: lms.Client, is_pdf: bool = False) -> str:
     return selected
 
 
+def convert_image_to_pdf(image_bytes: bytes) -> Path:
+    """Konvertiere ein Bild in eine PDF-Datei für PDF-only Modelle.
+
+    Schreibt die Bilddaten in eine temporäre PNG-Datei und konvertiert
+    sie mit ImageMagick (magick-Befehl) in eine PDF. Der Aufrufer ist für
+    die Bereinigung der erstellten PDF-Datei verantwortlich.
+
+    Args:
+        image_bytes: Die Bilddaten als Bytes.
+
+    Returns:
+        Der Pfad zur erstellten temporären PDF-Datei.
+    """
+    # Temporäre PNG-Datei erstellen
+    with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tmp:
+        tmp.write(image_bytes)
+        img_path = tmp.name
+
+    # PDF mit ImageMagick erstellen (magick-Befehl für IMv7+)
+    pdf_path = img_path + ".pdf"
+    try:
+        subprocess.run(
+            ["magick", img_path, pdf_path],
+            check=True,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+    finally:
+        # Temporäre PNG-Datei immer löschen
+        Path(img_path).unlink(missing_ok=True)
+
+    return Path(pdf_path)
+
+
 def ocr_page_sync(image_bytes: bytes, page_num: int, is_pdf: bool = False) -> tuple[str, str]:
     """OCR mit Markdown-Formatierung und Post-Processing.
 
@@ -716,11 +745,18 @@ def ocr_page_sync(image_bytes: bytes, page_num: int, is_pdf: bool = False) -> tu
         tmp.write(processed)
         tmp_path = tmp.name
 
+    pdf_path = None  # Wird gesetzt wenn Bild zu PDF konvertiert wird
     try:
         # Verbindung zum lokalen LM Studio Server herstellen
         client = lms.Client(api_host=LMSTUDIO_HOST)
         # Beste verfügbares Modell auswählen (Prioritätsliste)
         model_name = select_ocr_model(client, is_pdf=is_pdf)
+
+        # Für PDF-only Modelle bei Bild-Eingabe: Bild zu PDF konvertieren
+        if model_name in PDF_ONLY_MODELS and not is_pdf:
+            console.print("[cyan]PDF-only Modell: Konvertiere Bild zu PDF...[/cyan]")
+            pdf_path = convert_image_to_pdf(image_bytes)
+
         model = client.llm.model(
             model_name,
             ttl=None,  # Modell bleibt geladen
@@ -736,8 +772,8 @@ def ocr_page_sync(image_bytes: bytes, page_num: int, is_pdf: bool = False) -> tu
         text = None
         for attempt in range(2):
             try:
-                # Bild erneut einlesen für jeden Versuch
-                image_handle = client.prepare_image(src=tmp_path)
+                # Bild erneut einlesen für jeden Versuch (PDF bei PDF-only Modellen)
+                image_handle = client.prepare_image(src=str(pdf_path) if pdf_path else tmp_path)
                 chat = lms.Chat(SYSTEM_PROMPT)
                 chat.add_user_message(prompt, images=[image_handle])
 
@@ -758,7 +794,7 @@ def ocr_page_sync(image_bytes: bytes, page_num: int, is_pdf: bool = False) -> tu
         # Modell-spezifischer Kurz-Prompt als Fallback, sonst der generische Fallback
         if not text or not text.strip() or len(text.strip()) < 10:
             fallback = MODEL_PROMPTS.get(model_name, FALLBACK_PROMPT)
-            image_handle = client.prepare_image(src=tmp_path)
+            image_handle = client.prepare_image(src=str(pdf_path) if pdf_path else tmp_path)
             chat = lms.Chat(SYSTEM_PROMPT)
             chat.add_user_message(fallback, images=[image_handle])
             result = model.respond(chat, config=model_config if model_config else None)
@@ -782,6 +818,9 @@ def ocr_page_sync(image_bytes: bytes, page_num: int, is_pdf: bool = False) -> tu
     finally:
         # Temporäre Bilddatei immer aufräumen
         Path(tmp_path).unlink(missing_ok=True)
+        # Temporäre PDF-Datei aufräumen (falls erstellt)
+        if pdf_path:
+            Path(pdf_path).unlink(missing_ok=True)
 
 
 def convert_pdf_with_pdftoppm(pdf_path: Path) -> list[Path]:

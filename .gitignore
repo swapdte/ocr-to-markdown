@@ -37,3 +37,6 @@ htmlcov/
 # Type checking
 .mypy_cache/
 .pytype/
+
+# Test PDFs
+*.pdf
