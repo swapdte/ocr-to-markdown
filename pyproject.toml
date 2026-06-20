@@ -1,6 +1,6 @@
 [project]
 name = "ocr-to-markdown"
-version = "1.9.1"
+version = "1.9.2"
 description = "OCR zu Markdown Konverter mit TUI-Dateiauswahl"
 requires-python = ">=3.10"
 dependencies = [

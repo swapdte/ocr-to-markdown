@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-v1.9.1 - OCR zu Markdown Konverter mit TUI-Dateiauswahl
+v1.9.2 - OCR zu Markdown Konverter mit TUI-Dateiauswahl
 
 Verwendet ein LLM (via LM Studio) um Bilddateien und PDFs zu OCR-lesen
 und als Markdown mit Tabellen-Formatierung auszugeben.
@@ -83,7 +83,7 @@ PDF_ONLY_MODELS = {
 # Modell-spezifische Prompts
 # PaddleOCR-VL erwartet kurze Task-Prompts wie "OCR:", nicht lange Anweisungen
 MODEL_PROMPTS = {
-    "paddlepaddle/paddleocr-vl-1.6-gguf/paddleocr-vl-1.6-gguf.gguf": "OCR:",
+    "paddlepaddle/paddleocr-vl-1.6-gguf/paddleocr-vl-1.6-gguf.gguf": "Please extract all text and tables from this German document image exactly as they appear.",
 }
 
 # Woerter fuer automatische Spracherkennung
@@ -1446,7 +1446,7 @@ def convert_html_tables_in_file(md_path: Path) -> None:
 
 def main():
     """Hauptfunktion: Dateiauswahl, OCR-Verarbeitung, Speichern."""
-    console.print("\n[bold cyan]OCR to Markdown Tool v1.9.1[/bold cyan]\n")
+    console.print("\n[bold cyan]OCR to Markdown Tool v1.9.2[/bold cyan]\n")
 
     table_mode = "-t" in sys.argv
     debug_mode = "-d" in sys.argv
