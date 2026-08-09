@@ -1,6 +1,6 @@
 [project]
 name = "ocr-to-markdown"
-version = "1.18.0"
+version = "1.19.0"
 description = "OCR zu Markdown Konverter mit TUI-Dateiauswahl"
 requires-python = ">=3.10"
 authors = [
@@ -13,7 +13,6 @@ license = { text = "MIT" }
 dependencies = [
     "questionary",
     "rich",
-    "lmstudio",
     "pymupdf",
     "pillow",
 ]

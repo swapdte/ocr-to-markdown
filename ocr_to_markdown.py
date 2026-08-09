@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-v1.18.0 - OCR zu Markdown Konverter mit TUI-Dateiauswahl
+v1.19.0 - OCR zu Markdown Konverter mit TUI-Dateiauswahl
  
-Verwendet ein LLM (via LM Studio) um Bilddateien und PDFs zu OCR-lesen
-und als Markdown mit Tabellen-Formatierung auszugeben.
+Verwendet ein LLM (via koboldcpp mit OpenAI-kompatibler API) um
+Bilddateien und PDFs zu OCR-lesen und als Markdown mit
+Tabellen-Formatierung auszugeben.
 Der OCR-Text wird nachbearbeitet für bessere Formatierung und Rechtschreibung.
  
 Funktionen:
@@ -23,14 +24,18 @@ Funktionen:
 - Temporäre OCR-Dateien werden automatisch gelöscht
 - HTML-zu-Markdown Tabellenkonvertierung in .md Dateien (-t Flag)
 - Frontmatter mit UUID in jeder erstellten .md Datei
+- koboldcpp läuft lokal mit OpenAI-kompatibler API (http://localhost:5001/v1),
+  lädt Modelle automatisch und entlädt sie nach 600s Inaktivität
 """
 
 import sys
 import io
 import re
 import subprocess
-import tempfile
 import uuid
+import base64
+import json
+import urllib.request
 from datetime import datetime
 from pathlib import Path
 
@@ -41,7 +46,6 @@ from rich.console import Console
 from rich.progress import Progress, SpinnerColumn, TextColumn, BarColumn
 
 # OCR und PDF-Verarbeitung
-import lmstudio as lms
 import fitz
 from PIL import Image
 
@@ -61,10 +65,11 @@ MIN_LINE_LENGTH = 2
 # Minimale DPI für PDF-Rendering (bessere Qualität bei gefalteten Seiten)
 MIN_PDF_DPI = 50
 
-# LM Studio Konfiguration
-LMSTUDIO_HOST = "127.0.0.1:1234"
-LMSTUDIO_CONTEXT_LENGTH = 20000  # Kontextfenster in Tokens
-LMSTUDIO_SEED = 3502  # Seed für reproduzierbare Ergebnisse
+# koboldcpp Konfiguration
+# koboldcpp läuft lokal mit OpenAI-kompatibler API, lädt Modelle automatisch
+# und entlädt sie nach 600s Inaktivität
+KOBOLDCPP_API_BASE = "http://localhost:5001/v1"
+KOBOLDCPP_SEED = 3502  # Seed für reproduzierbare Ergebnisse
 
 # Bevorzugte OCR-Modelle in Prioritätsreihenfolge
 # Das erste verfügbare Modell aus dieser Liste wird verwendet
@@ -83,94 +88,17 @@ MODEL_PREFERENCES = [
 MODEL_PROMPTS = {
 }
 
-# Modell-spezifische Load-Konfigurationen (Seed, Batch-Size, etc.)
-# Seed wird beim Laden des Modells gesetzt, nicht bei der Vorhersage
-MODEL_LOAD_CONFIGS = {
-    "nanonets-ocr-s": {
-        "contextLength": LMSTUDIO_CONTEXT_LENGTH,
-        "seed": LMSTUDIO_SEED,
-        "evalBatchSize": 2048,
-        "numParallelSessions": 4,
-    },
-}
-
-# Jinja Chat-Template für nanonets-ocr-s (Qwen2.5-VL ChatML, Unsloth)
-# Enthält Bild-Injektion (<|vision_start|><|image_pad|><|vision_end|>)
-# und den OCR-Prompt fest eingebettet
-NANONETS_JINJA_TEMPLATE = """{#- Copyright 2025-present the Unsloth team. All rights reserved. #}
-{#- Licensed under the Apache License, Version 2.0 (the "License") #}
-{%- set image_count = namespace(value=0) -%}
-{%- set video_count = namespace(value=0) -%}
-{%- set text_count  = namespace(value=0) -%}
-{%- for message in messages -%}
-	{%- if loop.first and message["role"] != "system" -%}
-		{{- "<|im_start|>system\\nYou are a precise OCR engine.<|im_end|>\\n" -}}
-	{%- endif -%}
-	{{- "<|im_start|>" -}}
-	{{- message["role"] -}}
-	{{- "\\n" -}}
-	{%- if message["content"] is string -%}
-		{{- message["content"] -}}
-		{{- "<|im_end|>\\n" -}}
-	{%- else -%}
-		{#- Check if text field is present #}
-		{%- set text_count.value = 0 -%}
-		{%- for content in message["content"] -%}
-			{%- if content["type"] == "image" or "image" in content or "image_url" in content -%}
-				{%- set image_count.value = image_count.value + 1 -%}
-				{%- if add_vision_id -%}
-					{{- "Picture " -}}
-					{{- image_count.value -}}
-					{{- ": " -}}
-				{%- endif -%}
-				{{- "<|vision_start|><|image_pad|><|vision_end|>" -}}
-			{%- elif content["type"] == "video" or "video" in content -%}
-				{%- set video_count.value = video_count.value + 1 -%}
-				{%- if add_vision_id -%}
-					{{- "Video " -}}
-					{{- video_count.value -}}
-					{{- ": " -}}
-				{%- endif -%}
-				{{- "<|vision_start|><|video_pad|><|vision_end|>" -}}
-			{%- elif "text" in content -%}
-				{{- content["text"]|string -}}
-				{%- if content["text"]|length != 0 -%}
-					{%- set text_count.value = text_count.value + 1 -%}
-				{%- endif -%}
-			{%- endif -%}
-		{%- endfor -%}
-		{#- If text field seen, add a newline #}
-		{%- if text_count.value != 0 -%}
-			{{- "\\n" -}}
-		{%- endif -%}
-		{{- "Extract the text from the above document as if you were reading it naturally. Return the all text and tables in markdown format." -}}
-		{{- "<|im_end|>\\n" -}}
-	{%- endif -%}
-{%- endfor -%}
-{%- if add_generation_prompt -%}
-	{{- "<|im_start|>assistant\\n" -}}
-{%- endif -%}
-{#- Copyright 2025-present the Unsloth team. All rights reserved. #}
-{#- Licensed under the Apache License, Version 2.0 (the "License") #}"""
-
-# Modell-spezifische Konfigurationen (Prediction-Parameter)
-# nanonets-ocr-s: Parameter aus Nanonets-OCR-s-Q4_K_S.gguf.json + Jinja-Template
-# maxPredictedTokens ist deaktiviert (checked: false) — kein Token-Limit
+# Modell-spezifische Konfigurationen (Sampler-Parameter für koboldcpp)
+# Werte aus der Nanonets-OCR-s Empfehlung (ocr.preset.json), übersetzt auf OpenAI-Namen
 MODEL_CONFIGS = {
     "nanonets-ocr-s": {
         "temperature": 0,
-        "repeatPenalty": 1.05,
-        "minPSampling": 0,
-        "topPSampling": 1,
-        "topKSampling": -1,
-        "stopStrings": ["<|im_start|>", "<|im_end|>"],
-        "promptTemplate": {
-            "type": "jinja",
-            "stopStrings": ["<|im_start|>", "<|im_end|>"],
-            "jinjaPromptTemplate": {
-                "template": NANONETS_JINJA_TEMPLATE,
-            },
-        },
+        "repetition_penalty": 1.05,
+        "min_p": 0,
+        "top_p": 1,
+        "top_k": -1,  # -1 = deaktiviert
+        "seed": KOBOLDCPP_SEED,
+        "max_tokens": 4096,
     },
 }
 
@@ -712,30 +640,97 @@ def filter_short_lines(text: str, min_length: int = MIN_LINE_LENGTH) -> str:
     return "\n".join(filtered)
 
 
-def select_ocr_model(client: lms.Client) -> str:
-    """Wähle das beste verfügbare OCR-Modell und entlade es bei Bedarf.
+def _model_matches(preferred: str, model_id: str) -> bool:
+    """Prüfe ob eine koboldcpp Modell-ID (Dateiname) zu einer Präferenz passt.
 
-    Prüft welche der bevorzugten Modelle (MODEL_PREFERENCES) in LM Studio
-    heruntergeladen sind und wählt das Modell mit höchster Priorität.
-    Falls das Modell bereits geladen ist, wird es zuerst entladen um einen
-    sauberen OCR-Durchlauf zu garantieren.
+    koboldcpp meldet Modell-Dateinamen wie "nanonets-ocr.kcpps",
+    die Präferenzen sind Modellnamen wie "nanonets-ocr-s".
+    """
+    p = preferred.lower().rsplit("/", 1)[-1]  # Pfadanteil entfernen
+    i = model_id.lower()
+    if p in i or i in p:
+        return True
+    # koboldcpp nutzt Dateinamen: "nanonets-ocr.kcpps" vs. "nanonets-ocr-s"
+    i_stem = i.split(".")[0]  # Dateiendung entfernen
+    p_stem = p.rsplit("-", 1)[0]  # letztes Segment der Präferenz abschneiden
+    return bool(p_stem) and i_stem.startswith(p_stem)
+
+
+def chat_completion(
+    model_name: str,
+    messages: list[dict],
+    config: dict | None = None,
+    image_bytes: bytes | None = None,
+) -> str:
+    """Sende eine Chat-Completion an koboldcpp (OpenAI-kompatible API).
 
     Args:
-        client: Verbundener LM Studio Client.
+        model_name: Modell-ID aus /v1/models (z.B. "nanonets-ocr.kcpps").
+        messages: OpenAI-Nachrichtenliste [{"role": ..., "content": ...}].
+        config: Sampler-Parameter (temperature, top_p, ...), optional.
+        image_bytes: Optionales Bild (PNG/JPEG), wird als base64 image_url angehängt.
+
+    Returns:
+        Der Antworttext des Modells.
+
+    Raises:
+        Exception bei HTTP-Fehlern oder fehlendem Inhalt.
+    """
+    if image_bytes is not None:
+        b64 = base64.b64encode(image_bytes).decode("ascii")
+        last = messages[-1]
+        last = {
+            **last,
+            "content": [
+                {"type": "text", "text": last["content"]},
+                {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{b64}"}},
+            ],
+        }
+        messages = messages[:-1] + [last]
+
+    body = {"model": model_name, "messages": messages}
+    if config:
+        body.update(config)
+
+    req = urllib.request.Request(
+        f"{KOBOLDCPP_API_BASE}/chat/completions",
+        data=json.dumps(body).encode("utf-8"),
+        headers={"Content-Type": "application/json"},
+        method="POST",
+    )
+    with urllib.request.urlopen(req, timeout=600) as resp:
+        data = json.load(resp)
+    return data["choices"][0]["message"]["content"]
+
+
+def select_ocr_model() -> str:
+    """Wähle das beste verfügbare OCR-Modell.
+
+    koboldcpp lädt Modelle bei Bedarf selbst und entlädt sie nach
+    600 Sekunden Inaktivität; die Auswahl erfolgt über /v1/models.
 
     Returns:
         Die Modellkennung des ausgewählten Modells.
     """
-    # Alle heruntergeladenen Modelle abrufen
-    downloaded = client.list_downloaded_models()
-    # Verfügbare Modell-IDs/Pfade als Kleinbuchstaben sammeln
-    available = {m.path.lower() for m in downloaded}
+    # Alle verfügbaren Modelle von koboldcpp abrufen
+    try:
+        req = urllib.request.Request(f"{KOBOLDCPP_API_BASE}/models")
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            data = json.load(resp)
+        # Platzhalter-IDs von koboldcpp herausfiltern
+        placeholders = {"inactive", "initial_model", "unload_model"}
+        available = {
+            m["id"] for m in data.get("data", []) if m.get("id") not in placeholders
+        }
+    except Exception as e:
+        console.print(f"[yellow]koboldcpp nicht erreichbar: {e}[/yellow]")
+        return MODEL_PREFERENCES[0]
 
     selected = None
     # Bevorzugtes Modell in Prioritätsreihenfolge suchen
     for preferred in MODEL_PREFERENCES:
-        for avail_path in available:
-            if preferred.lower() in avail_path:
+        for avail_id in available:
+            if _model_matches(preferred, avail_id):
                 selected = preferred
                 break
         if selected:
@@ -749,18 +744,6 @@ def select_ocr_model(client: lms.Client) -> str:
         )
     else:
         console.print(f"[green]Modell gewählt:[/green] {selected}")
-
-    # Modell entladen falls bereits geladen (frischer Start für OCR)
-    loaded = client.list_loaded_models(namespace="llm")
-    for lm in loaded:
-        if selected.lower() in lm.identifier.lower():
-            console.print(f"[cyan]Entlade geladenes Modell {selected}...[/cyan]")
-            try:
-                handle = client.llm.model(selected)
-                handle.unload()
-            except Exception:
-                pass
-            break
 
     return selected
 
@@ -778,61 +761,39 @@ def ocr_page_sync(image_bytes: bytes, page_num: int) -> tuple[str, str]:
     Returns:
         Ein Tuple aus (erkannte_sprache, text_inhalt).
     """
-    # Bild ggf. verkleinern für bessere OCR-Performance
+    # Bild ggf. verkleinern für bessere OCR-Performance (liefert PNG-Bytes)
     processed = resize_if_needed(image_bytes)
 
-    # Bild als temporäre PNG-Datei speichern (LM Studio braucht Dateipfad)
-    with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tmp:
-        tmp.write(processed)
-        tmp_path = tmp.name
-
     try:
-        # Verbindung zum lokalen LM Studio Server herstellen
-        client = lms.Client(api_host=LMSTUDIO_HOST)
-        # Beste verfügbares Modell auswählen (Prioritätsliste)
-        model_name = select_ocr_model(client)
-
-        model = client.llm.model(
-            model_name,
-            ttl=None,  # Modell bleibt geladen
-            config=MODEL_LOAD_CONFIGS.get(model_name, {"contextLength": LMSTUDIO_CONTEXT_LENGTH}),
-        )
-
-        # Modell-spezifischen Prompt wählen
+        model_name = select_ocr_model()
         prompt = MODEL_PROMPTS.get(model_name, OCR_PROMPT)
-        # Modell-spezifische Konfiguration wählen (Temperatur, Top-P, etc.)
-        model_config = MODEL_CONFIGS.get(model_name, {})
+        model_config = MODEL_CONFIGS.get(model_name, None)
 
-        # OCR mit Retry bei Chat-Response-Error (max. 2 Versuche)
+        messages = [
+            {"role": "system", "content": SYSTEM_PROMPT},
+            {"role": "user", "content": prompt},
+        ]
+
+        # OCR mit Retry (max. 2 Versuche)
         text = None
         for attempt in range(2):
             try:
-                image_handle = client.prepare_image(src=tmp_path)
-                chat = lms.Chat(SYSTEM_PROMPT)
-                chat.add_user_message(prompt, images=[image_handle])
-
-                result = model.respond(chat, config=model_config if model_config else None)
-                text = result.content
-                break  # Erfolgreich, kein Retry nötig
+                text = chat_completion(model_name, messages, config=model_config, image_bytes=processed)
+                break
             except Exception as e:
                 if attempt == 0:
-                    console.print(
-                        f"[yellow]Chat-Response-Error, retry... ({e})[/yellow]"
-                    )
-                    continue  # Zweiter Versuch
-                else:
-                    # Zweiter Versuch auch fehlgeschlagen
-                    raise
+                    console.print(f"[yellow]Chat-Response-Error, retry... ({e})[/yellow]")
+                    continue
+                raise
 
         # Falls Ergebnis leer oder sehr kurz: Fallback-Prompt versuchen
-        # Modell-spezifischer Kurz-Prompt als Fallback, sonst der generische Fallback
         if not text or not text.strip() or len(text.strip()) < 10:
             fallback = MODEL_PROMPTS.get(model_name, FALLBACK_PROMPT)
-            image_handle = client.prepare_image(src=tmp_path)
-            chat = lms.Chat(SYSTEM_PROMPT)
-            chat.add_user_message(fallback, images=[image_handle])
-            result = model.respond(chat, config=model_config if model_config else None)
-            text = result.content
+            messages = [
+                {"role": "system", "content": SYSTEM_PROMPT},
+                {"role": "user", "content": fallback},
+            ]
+            text = chat_completion(model_name, messages, config=model_config, image_bytes=processed)
 
         # Post-Processing: Prompt-Artefakte entfernen, kurze Zeilen filtern,
         # Duplikate entfernen
@@ -848,10 +809,6 @@ def ocr_page_sync(image_bytes: bytes, page_num: int) -> tuple[str, str]:
     except Exception as e:
         console.print(f"[red]Fehler bei OCR: {e}[/red]")
         return "Unbekannt", f"[Fehler: {e}]"
-
-    finally:
-        # Temporäre Bilddatei immer aufräumen
-        Path(tmp_path).unlink(missing_ok=True)
 
 
 def convert_pdf_with_pdftoppm(pdf_path: Path) -> list[Path]:
@@ -1047,11 +1004,10 @@ def save_markdown(file_path: Path, language: str, content: str) -> Path:
 
 
 def refine_markdown(content: str) -> str:
-    """Verbessere OCR-Text mit dem geladenen LM Studio Modell.
+    """Verbessere OCR-Text mit dem koboldcpp Modell.
 
     Sendet den OCR-Text an das Modell für Rechtschreibkorrektur
-    und verbesserte Markdown-Formatierung. Nutzt das bereits geladene
-    Modell (TTL steuert das automatische Entladen).
+    und verbesserte Markdown-Formatierung.
 
     Args:
         content: Der rohe OCR-Text als Markdown.
@@ -1067,19 +1023,9 @@ def refine_markdown(content: str) -> str:
         task = progress.add_task("[cyan]Verbessere Markdown-Formatierung...[/cyan]")
 
         try:
-            client = lms.Client(api_host=LMSTUDIO_HOST)
-            model_name = select_ocr_model(client)
-            model = client.llm.model(
-                model_name,
-                ttl=None,  # Modell bleibt geladen
-                config=MODEL_LOAD_CONFIGS.get(model_name, {"contextLength": LMSTUDIO_CONTEXT_LENGTH}),
-            )
-
-            chat = lms.Chat(REFINEMENT_PROMPT)
-            chat.add_user_message(content)
-
-            result = model.respond(chat)
-            refined = result.content
+            model_name = select_ocr_model()
+            messages = [{"role": "user", "content": REFINEMENT_PROMPT + "\n\n" + content}]
+            refined = chat_completion(model_name, messages)
 
             # Post-Processing: Prompt-Artefakte entfernen
             refined = clean_ocr_output(refined)
@@ -1276,40 +1222,11 @@ def select_markdown_file(start_dir: Path) -> Path | None:
     return None
 
 
-def prepare_table_conversion_model(client: lms.Client) -> str:
-    """Entlade alle Modelle ausser dem Tabellenkonvertierungs-Modell und lade es.
-
-    Entlädt alle geladenen Modelle in LM Studio die nicht das Ziel-Modell
-    (TABLE_CONVERSION_MODEL) sind, um Ressourcen freizugeben.
-
-    Args:
-        client: Verbundener LM Studio Client.
-
-    Returns:
-        Die Modellkennung des Tabellenkonvertierungs-Modells.
-    """
-    target = TABLE_CONVERSION_MODEL
-
-    # Alle geladenen Modelle ausser dem Ziel entladen
-    loaded = client.list_loaded_models(namespace="llm")
-    for lm in loaded:
-        if target.lower() not in lm.identifier.lower():
-            console.print(f"[cyan]Entlade Modell {lm.identifier}...[/cyan]")
-            try:
-                handle = client.llm.model(lm.identifier)
-                handle.unload()
-            except Exception:
-                pass
-
-    console.print(f"[green]Lade Modell {target}...[/green]")
-    return target
-
-
 def convert_html_tables_in_file(md_path: Path) -> None:
     """Wandle alle HTML-Tabellen in einer .md Datei in Markdown-Tabellen um.
 
     Liest die Datei, sendet den Inhalt an das Tabellenkonvertierungs-Modell
-    in LM Studio und speichert das Ergebnis zurück in dieselbe Datei.
+    in koboldcpp und speichert das Ergebnis zurück in dieselbe Datei.
 
     Args:
         md_path: Pfad zur Markdown-Datei.
@@ -1326,24 +1243,15 @@ def convert_html_tables_in_file(md_path: Path) -> None:
         )
 
         try:
-            client = lms.Client(api_host=LMSTUDIO_HOST)
-            model_name = prepare_table_conversion_model(client)
-            model = client.llm.model(
-                model_name,
-                ttl=None,  # Modell bleibt geladen
-                config=MODEL_LOAD_CONFIGS.get(model_name, {"contextLength": LMSTUDIO_CONTEXT_LENGTH}),
-            )
+            model_name = TABLE_CONVERSION_MODEL
+            messages = [{"role": "user", "content": HTML_TO_MD_TABLE_PROMPT + "\n\n" + content}]
 
             progress.update(
                 task,
                 description=f"[yellow]Verarbeite {md_path.name} mit {model_name}...[/yellow]",
             )
 
-            chat = lms.Chat(HTML_TO_MD_TABLE_PROMPT)
-            chat.add_user_message(content)
-
-            result = model.respond(chat)
-            converted = result.content
+            converted = chat_completion(model_name, messages)
 
             # Überflüssige Code-Block-Auszeichnungen entfernen
             # falls das Modell trotzdem ```markdown verwendet
@@ -1376,7 +1284,7 @@ def convert_html_tables_in_file(md_path: Path) -> None:
 
 def main():
     """Hauptfunktion: Dateiauswahl, OCR-Verarbeitung, Speichern."""
-    console.print("\n[bold cyan]OCR to Markdown Tool v1.18.0[/bold cyan]\n")
+    console.print("\n[bold cyan]OCR to Markdown Tool v1.19.0[/bold cyan]\n")
 
     table_mode = "-t" in sys.argv
     debug_mode = "-d" in sys.argv

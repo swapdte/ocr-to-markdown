@@ -1,13 +1,13 @@
 # OCR to Markdown
 
-Ein CLI-Tool zur Konvertierung von Bildern und PDFs in Markdown mithilfe lokaler OCR-Modelle über [LM Studio](https://lmstudio.ai/).
+Ein CLI-Tool zur Konvertierung von Bildern und PDFs in Markdown mithilfe lokaler OCR-Modelle über [koboldcpp](https://github.com/LostRuins/koboldcpp) (OpenAI-kompatible API).
 
 ## Funktionen
 
 - **Bild-OCR**: PNG, JPG, JPEG Dateien werden direkt OCR-gelesen
 - **PDF-OCR**: PDFs werden seitenweise zu PNG konvertiert und OCR-verarbeitet
 - **Automatische Modellauswahl**: Wählt das beste verfügbare OCR-Modell aus einer Prioritätsliste
-- **Modell-spezifische Konfiguration**: Temperatur, Repeat Penalty, Top-P, Jinja-Templates pro Modell
+- **Modell-spezifische Konfiguration**: Sampler-Parameter (Temperatur, Repeat Penalty, Top-P, Seed) pro Modell
 - **Spracherkennung**: Automatische Erkennung von Deutsch, Englisch, Französisch und Spanisch
 - **Markdown-Nachbearbeitung**: Rechtschreibung, Formatierung und Duplikate werden korrigiert
 - **HTML-zu-Markdown Tabellenkonvertierung**: Nachträgliche Konvertierung von HTML-Tabellen in Markdown (`-t` Flag)
@@ -18,23 +18,23 @@ Ein CLI-Tool zur Konvertierung von Bildern und PDFs in Markdown mithilfe lokaler
 ## Voraussetzungen
 
 - **Python 3.10+**
-- **LM Studio** — Lokaler LLM-Server, läuft auf `127.0.0.1:1234`
+- **koboldcpp** — Lokaler LLM-Server mit OpenAI-kompatibler API auf `http://localhost:5001/v1`. Lädt Modelle automatisch und entlädt sie nach 600 Sekunden Inaktivität
 - **pdftoppm** — PDF-zu-PNG Konvertierung (Teil von [poppler-utils](https://poppler.freedesktop.org/))
 - **ImageMagick** — Bildverarbeitung (`magick`-Befehl, für Bild-Resize)
 
 ### Empfohlene OCR-Modelle
 
-Lade eines oder mehrere der folgenden Modelle in LM Studio herunter:
+Lade eines oder mehrere der folgenden Modelle in koboldcpp (als Modell-Dateien im koboldcpp-Modellordner):
 
 | Priorität | Modell | Hinweis |
 |-----------|--------|---------|
-| 1 | [nanonets-ocr-s](https://huggingface.co/unsloth/Nanonets-OCR-s-GGUF) | Bestes OCR-Ergebnis, benötigt Jinja-Template |
+| 1 | [nanonets-ocr-s](https://huggingface.co/unsloth/Nanonets-OCR-s-GGUF) | Bestes OCR-Ergebnis |
 | 2 | [allenai/olmocr-2-7b](https://huggingface.co/allenai/olmocr-2-7b) | Gute Alternative |
 | 3 | [gemma-4-e4b-it](https://huggingface.co/unsloth/gemma-4-E4B-it-GGUF) | Allzweck-Modell |
 | 4 | [gemma-4-e2b-it](https://huggingface.co/) | Kleineres Allzweck-Modell |
 | 5 | [qwen3.5-9b](https://huggingface.co/unsloth/Qwen3.5-9B-GGUF) | Fallback |
 
-Das erste verfügbare Modell aus der Liste wird automatisch ausgewählt.
+Das erste verfügbare Modell aus der Liste wird automatisch ausgewählt. Die Modell-IDs werden über die `/v1/models`-API von koboldcpp abgefragt (Dateinamen, z.B. `nanonets-ocr.kcpps`).
 
 ## Installation
 
@@ -117,49 +117,43 @@ MODEL_PREFERENCES = [
 
 ### Modell-spezifische Konfiguration
 
-Jedes Modell kann eigene Vorhersage-Parameter haben:
+Jedes Modell kann eigene Sampler-Parameter haben (OpenAI-Namen, werden direkt an die koboldcpp-API übergeben):
 
 ```python
 MODEL_CONFIGS = {
     "nanonets-ocr-s": {
         "temperature": 0,
-        "repeatPenalty": 1.05,
-        "minPSampling": 0,
-        "topPSampling": 1,
-        "topKSampling": -1,
-        "stopStrings": ["<|im_start|>", "<|im_end|>"],
-        "promptTemplate": {
-            "type": "jinja",
-            "stopStrings": ["<|im_start|>", "<|im_end|>"],
-            "jinjaPromptTemplate": {
-                "template": NANONETS_JINJA_TEMPLATE,
-            },
-        },
+        "repetition_penalty": 1.05,
+        "min_p": 0,
+        "top_p": 1,
+        "top_k": -1,  # -1 = deaktiviert
+        "seed": KOBOLDCPP_SEED,
+        "max_tokens": 4096,
     },
 }
 ```
 
-### LM Studio Verbindung
+### koboldcpp Verbindung
 
-Standardmäßig verbindet sich das Tool mit LM Studio auf `127.0.0.1:1234`. Die Konfiguration kann in `ocr_to_markdown.py` angepasst werden:
+Standardmäßig verbindet sich das Tool mit koboldcpp auf `http://localhost:5001/v1` (OpenAI-kompatible API). Die Konfiguration kann in `ocr_to_markdown.py` angepasst werden:
 
 ```python
-LMSTUDIO_HOST = "127.0.0.1:1234"
-LMSTUDIO_CONTEXT_LENGTH = 20000
-LMSTUDIO_SEED = 3502
+KOBOLDCPP_API_BASE = "http://localhost:5001/v1"
+KOBOLDCPP_SEED = 3502
 ```
+
+koboldcpp lädt Modelle bei Bedarf automatisch und entlädt sie nach 600 Sekunden Inaktivität — das Tool selbst verwaltet kein Laden/Entladen mehr.
 
 ## Wie es funktioniert
 
 ### Bildverarbeitung
 
 1. Bild wird ggf. verkleinert (max. 1024px)
-2. Bild wird als temporäre PNG-Datei gespeichert
-3. LM Studio Modell wird geladen (mit Modell-spezifischer Konfiguration)
-4. Bild wird über `prepare_image()` an das Modell gesendet
-5. OCR-Ergebnis wird nachbearbeitet (Rechtschreibung, Formatierung, Duplikate)
-6. Sprache wird automatisch erkannt
-7. Ergebnis wird als Markdown gespeichert
+2. Bild wird als base64 `image_url` direkt an die koboldcpp-API gesendet
+3. koboldcpp lädt das gewählte Modell automatisch (mit Modell-spezifischer Konfiguration)
+4. OCR-Ergebnis wird nachbearbeitet (Rechtschreibung, Formatierung, Duplikate)
+5. Sprache wird automatisch erkannt
+6. Ergebnis wird als Markdown gespeichert
 
 ### PDF-Verarbeitung
 
@@ -168,19 +162,16 @@ LMSTUDIO_SEED = 3502
 3. Ergebnisse werden zusammengeführt
 4. OCR-Text wird optional in die Quell-PDF eingefügt
 
-### Jinja-Template für nanonets-ocr-s
-
-Das Modell `nanonets-ocr-s` (basierend auf Qwen2.5-VL) benötigt ein spezielles Jinja-Chat-Template mit Vision-Tokens (`<|vision_start|><|image_pad|><|vision_end|>`), damit Bilder korrekt an das Modell übergeben werden. Dieses Template ist in `NANONETS_JINJA_TEMPLATE` definiert und wird über `MODEL_CONFIGS` automatisch angewendet.
-
 ## Abhängigkeiten
 
 | Paket | Zweck |
 |-------|-------|
-| [lmstudio](https://github.com/lmstudio-ai/lmstudio-python) | LM Studio Python SDK |
 | [questionary](https://github.com/tmbo/questionary) | TUI-Dateiauswahl |
 | [rich](https://github.com/Textualize/rich) | Fortschrittsanzeige und Konsolenausgabe |
 | [pymupdf](https://github.com/pymupdf/PyMuPDF) | PDF-Verarbeitung (Text einbetten) |
 | [pillow](https://python-pillow.org/) | Bildverarbeitung (Resize) |
+
+Die Kommunikation mit koboldcpp erfolgt über die OpenAI-kompatible API mit der Python-Standardbibliothek (`urllib`) — keine zusätzliche Abhängigkeit nötig.
 
 ## Lizenz
 
