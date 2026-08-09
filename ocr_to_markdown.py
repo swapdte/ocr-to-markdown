@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-v1.19.0 - OCR zu Markdown Konverter mit TUI-Dateiauswahl
+v1.19.1 - OCR zu Markdown Konverter mit TUI-Dateiauswahl
  
 Verwendet ein LLM (via koboldcpp mit OpenAI-kompatibler API) um
 Bilddateien und PDFs zu OCR-lesen und als Markdown mit
@@ -46,7 +46,7 @@ from rich.console import Console
 from rich.progress import Progress, SpinnerColumn, TextColumn, BarColumn
 
 # OCR und PDF-Verarbeitung
-import fitz
+import pymupdf
 from PIL import Image
 
 # Konsolenausgabe mit Rich
@@ -484,7 +484,7 @@ def render_pdf_page(
         # Mindest-DPI verwenden
         scale = min_scale
 
-    mat = fitz.Matrix(scale, scale)
+    mat = pymupdf.Matrix(scale, scale)
     pix = page.get_pixmap(matrix=mat)
     return pix.tobytes("png")
 
@@ -656,6 +656,43 @@ def _model_matches(preferred: str, model_id: str) -> bool:
     return bool(p_stem) and i_stem.startswith(p_stem)
 
 
+def _model_config(model_name: str) -> dict | None:
+    """Finde die Sampler-Konfiguration passend zur koboldcpp-Modell-ID.
+
+    Die Schlüssel in MODEL_CONFIGS sind Präferenznamen (z.B. "nanonets-ocr-s"),
+    koboldcpp liefert aber Dateinamen (z.B. "nanonets-ocr.kcpps").
+    """
+    for key, cfg in MODEL_CONFIGS.items():
+        if _model_matches(key, model_name):
+            return cfg
+    return None
+
+
+def resolve_model_id(preferred: str) -> str:
+    """Suche die echte koboldcpp-Modell-ID (Dateiname) zu einer Präferenz.
+
+    Args:
+        preferred: Präferenzname (z.B. "qwen3.5-9b").
+
+    Returns:
+        Die echte Modell-ID aus /v1/models oder die Präferenz als Fallback.
+    """
+    try:
+        req = urllib.request.Request(f"{KOBOLDCPP_API_BASE}/models")
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            data = json.load(resp)
+        placeholders = {"inactive", "initial_model", "unload_model"}
+        for m in data.get("data", []):
+            mid = m.get("id")
+            if mid in placeholders:
+                continue
+            if _model_matches(preferred, mid):
+                return mid
+    except Exception:
+        pass
+    return preferred
+
+
 def chat_completion(
     model_name: str,
     messages: list[dict],
@@ -706,11 +743,14 @@ def chat_completion(
 def select_ocr_model() -> str:
     """Wähle das beste verfügbare OCR-Modell.
 
-    koboldcpp lädt Modelle bei Bedarf selbst und entlädt sie nach
-    600 Sekunden Inaktivität; die Auswahl erfolgt über /v1/models.
+    koboldcpp verwaltet den Modell-Lebenszyklus selbst (lädt bei Bedarf,
+    entlädt nach 600 Sekunden Inaktivität); die Auswahl erfolgt über
+    /v1/models. Wichtig: die echte koboldcpp-Modell-ID (Dateiname wie
+    "nanonets-ocr.kcpps") wird zurückgegeben, damit koboldcpp das bereits
+    geladene Modell weiterverwendet statt es bei jedem Request zu wechseln.
 
     Returns:
-        Die Modellkennung des ausgewählten Modells.
+        Die echte koboldcpp-Modell-ID des ausgewählten Modells.
     """
     # Alle verfügbaren Modelle von koboldcpp abrufen
     try:
@@ -731,7 +771,7 @@ def select_ocr_model() -> str:
     for preferred in MODEL_PREFERENCES:
         for avail_id in available:
             if _model_matches(preferred, avail_id):
-                selected = preferred
+                selected = avail_id  # echte koboldcpp-ID verwenden
                 break
         if selected:
             break
@@ -767,7 +807,7 @@ def ocr_page_sync(image_bytes: bytes, page_num: int) -> tuple[str, str]:
     try:
         model_name = select_ocr_model()
         prompt = MODEL_PROMPTS.get(model_name, OCR_PROMPT)
-        model_config = MODEL_CONFIGS.get(model_name, None)
+        model_config = _model_config(model_name)
 
         messages = [
             {"role": "system", "content": SYSTEM_PROMPT},
@@ -1051,7 +1091,7 @@ def refine_markdown(content: str) -> str:
 def insert_text_into_pdf(pdf_path: Path, markdown_text: str) -> None:
     """Füge OCR-Text als unsichtbare Textebene auf die entsprechenden PDF-Seiten ein.
 
-    Verwendet PyMuPDF (fitz) mit Render-Modus 3 (unsichtbarer Text), um den
+    Verwendet PyMuPDF (pymupdf) mit Render-Modus 3 (unsichtbarer Text), um den
     erkannten OCR-Text als durchsuchbare Textebene über die jeweilige
     PDF-Seite zu legen. Der visuelle Inhalt der PDF bleibt unverändert,
     aber der Text wird auswählbar und durchsuchbar.
@@ -1067,7 +1107,7 @@ def insert_text_into_pdf(pdf_path: Path, markdown_text: str) -> None:
     pages_content = [p.strip() for p in pages_content if p.strip()]
 
     # PDF-Dokument öffnen
-    doc = fitz.open(str(pdf_path))
+    doc = pymupdf.open(str(pdf_path))
 
     # Schriftgröße und Seitenrand festlegen
     fontsize = 9
@@ -1243,7 +1283,7 @@ def convert_html_tables_in_file(md_path: Path) -> None:
         )
 
         try:
-            model_name = TABLE_CONVERSION_MODEL
+            model_name = resolve_model_id(TABLE_CONVERSION_MODEL)
             messages = [{"role": "user", "content": HTML_TO_MD_TABLE_PROMPT + "\n\n" + content}]
 
             progress.update(

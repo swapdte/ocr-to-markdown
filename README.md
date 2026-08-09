@@ -31,10 +31,10 @@ Lade eines oder mehrere der folgenden Modelle in koboldcpp (als Modell-Dateien i
 | 1 | [nanonets-ocr-s](https://huggingface.co/unsloth/Nanonets-OCR-s-GGUF) | Bestes OCR-Ergebnis |
 | 2 | [allenai/olmocr-2-7b](https://huggingface.co/allenai/olmocr-2-7b) | Gute Alternative |
 | 3 | [gemma-4-e4b-it](https://huggingface.co/unsloth/gemma-4-E4B-it-GGUF) | Allzweck-Modell |
-| 4 | [gemma-4-e2b-it](https://huggingface.co/) | Kleineres Allzweck-Modell |
+| 4 | [gemma-4-e2b-it](https://huggingface.co/unsloth/gemma-4-E2B-it-GGUF) | Kleineres Allzweck-Modell |
 | 5 | [qwen3.5-9b](https://huggingface.co/unsloth/Qwen3.5-9B-GGUF) | Fallback |
 
-Das erste verfügbare Modell aus der Liste wird automatisch ausgewählt. Die Modell-IDs werden über die `/v1/models`-API von koboldcpp abgefragt (Dateinamen, z.B. `nanonets-ocr.kcpps`).
+Das erste verfügbare Modell aus der Liste wird automatisch ausgewählt. Die Auswahl erfolgt über die `/v1/models`-API von koboldcpp — gesendet wird dabei immer die **echte Modell-ID** (Dateiname, z.B. `nanonets-ocr.kcpps`), nicht der Präferenzname. Nur so bleibt das geladene Modell über mehrere Bilder hinweg aktiv, statt bei jedem Request neu geladen zu werden.
 
 ## Installation
 
@@ -142,7 +142,7 @@ KOBOLDCPP_API_BASE = "http://localhost:5001/v1"
 KOBOLDCPP_SEED = 3502
 ```
 
-koboldcpp lädt Modelle bei Bedarf automatisch und entlädt sie nach 600 Sekunden Inaktivität — das Tool selbst verwaltet kein Laden/Entladen mehr.
+koboldcpp lädt Modelle bei Bedarf automatisch und entlädt sie nach 600 Sekunden Inaktivität (Server-Einstellung `--adminunloadtimeout`) — das Tool selbst verwaltet kein Laden/Entladen mehr. Voraussetzung für ein geladen bleibendes Modell: Jeder Request muss die exakte Modell-ID (Dateiname) verwenden — das übernimmt das Tool automatisch.
 
 ## Wie es funktioniert
 

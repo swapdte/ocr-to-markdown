@@ -9,7 +9,7 @@ import sys
 import subprocess
 from pathlib import Path
 
-from ocr_to_markdown import chat_completion, select_ocr_model, MODEL_CONFIGS, OCR_PROMPT
+from ocr_to_markdown import chat_completion, select_ocr_model, _model_config, OCR_PROMPT
 
 def main():
     pdf_path = sys.argv[1] if len(sys.argv) > 1 else "Jabra Sports_Pace_TechnSpecs_lores.pdf"
@@ -30,7 +30,7 @@ def main():
     print(f"PNG erstellt: {png_path} ({Path(png_path).stat().st_size} Bytes)")
 
     image_bytes = Path(png_path).read_bytes()
-    config = MODEL_CONFIGS.get(model_name, None)
+    config = _model_config(model_name)
     messages = [
         {"role": "system", "content": "You are a precise OCR engine."},
         {"role": "user", "content": OCR_PROMPT},
