@@ -300,7 +300,7 @@ def generate_frontmatter(title: str, tag: str = "ocr") -> str:
     Returns:
         Der formatierte Frontmatter-String.
     """
-    now = datetime.now().isoformat()
+    now = datetime.now().astimezone().isoformat()
     return FRONTMATTER_TEMPLATE.format(
         uuid=str(uuid.uuid4()),
         title=title,
@@ -585,11 +585,10 @@ def clean_ocr_output(text: str) -> str:
 
         # Prüfe ob Zeile ein Prompt-Artefakt enthält
         for artifact in PROMPT_ARTEFACTS:
-            if artifact in line_lower:
-                # Zeile nur entfernen wenn sie KURZ ist (wahrscheinlich Prompt-Rest)
-                if len(line_lower) < 80:
-                    keep = False
-                    break
+            # Zeile nur entfernen wenn sie KURZ ist (wahrscheinlich Prompt-Rest)
+            if artifact in line_lower and len(line_lower) < 80:
+                keep = False
+                break
 
         if keep:
             cleaned.append(line)
@@ -696,8 +695,8 @@ def resolve_model_id(preferred: str) -> str:
                 continue
             if _model_matches(preferred, mid):
                 return mid
-    except Exception:
-        pass
+    except (OSError, ValueError) as e:
+        console.print(f"[dim]Modellauflösung fehlgeschlagen: {e}[/dim]")
     return preferred
 
 
@@ -713,7 +712,7 @@ def abort_generation() -> None:
         )
         with urllib.request.urlopen(req, timeout=5):
             pass
-    except Exception as e:
+    except OSError as e:
         console.print(f"[dim]Abbruch fehlgeschlagen: {e}[/dim]")
 
 
@@ -870,7 +869,7 @@ def select_ocr_model() -> str:
         available = {
             m["id"] for m in data.get("data", []) if m.get("id") not in placeholders
         }
-    except Exception as e:
+    except (OSError, ValueError) as e:
         console.print(f"[yellow]koboldcpp nicht erreichbar: {e}[/yellow]")
         return MODEL_PREFERENCES[0]
 
@@ -954,7 +953,7 @@ def ocr_page_sync(image_bytes: bytes, page_num: int) -> tuple[str, str]:
 
         return language, content
 
-    except Exception as e:
+    except (OSError, ValueError, KeyError, IndexError) as e:
         console.print(f"[red]Fehler bei OCR: {e}[/red]")
         return "Unbekannt", f"[Fehler: {e}]"
 
@@ -1188,7 +1187,7 @@ def refine_markdown(content: str) -> str:
             progress.update(task, description="[green]Markdown verbessert[/green]")
             return refined
 
-        except Exception as e:
+        except (OSError, ValueError, KeyError, IndexError) as e:
             progress.update(
                 task, description=f"[red]Fehler bei Verbesserung: {e}[/red]"
             )

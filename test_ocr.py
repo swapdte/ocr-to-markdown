@@ -22,7 +22,7 @@ def main():
     png_path = "/tmp/test_ocr_page.png"
     result = subprocess.run(
         ["magick", "-density", "150", pdf_path + "[0]", png_path],
-        capture_output=True, text=True
+        capture_output=True, text=True, check=False
     )
     if result.returncode != 0:
         print(f"FEHLER bei Konvertierung: {result.stderr}")
@@ -47,7 +47,7 @@ def main():
             print(f"  Erste 500 Zeichen:\n{content[:500]}")
         else:
             print("  (leere Antwort)")
-    except Exception as e:
+    except (OSError, ValueError, KeyError, IndexError) as e:
         print(f"  FEHLER: {e}")
 
     # Aufräumen
