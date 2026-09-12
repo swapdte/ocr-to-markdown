@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """
 v1.21.0 - OCR zu Markdown Konverter mit TUI-Dateiauswahl
  
@@ -32,26 +31,26 @@ Funktionen:
   werden nach 20 gleichen Symbolen erkannt und aus dem Text entfernt
 """
 
-import sys
+import base64
 import io
+import json
 import re
 import subprocess
-import uuid
-import base64
-import json
+import sys
 import urllib.request
+import uuid
 from datetime import datetime
 from pathlib import Path
 
-# TUI und Progress-Anzeige
-import questionary
-from questionary import Style
-from rich.console import Console
-from rich.progress import Progress, SpinnerColumn, TextColumn, BarColumn
-
 # OCR und PDF-Verarbeitung
 import pymupdf
+
+# TUI und Progress-Anzeige
+import questionary
 from PIL import Image
+from questionary import Style
+from rich.console import Console
+from rich.progress import BarColumn, Progress, SpinnerColumn, TextColumn
 
 # Konsolenausgabe mit Rich
 console = Console()
@@ -518,10 +517,7 @@ def has_table_structure(text: str) -> bool:
     table_line_count = 0
     for line in lines:
         # Pipe-Zeichen für Markdown-Tabellen
-        if line.count("|") >= 2:
-            table_line_count += 1
-        # Viele Tabulatoren (Spalten-Trenner)
-        elif line.count("\t") >= 2:
+        if line.count("|") >= 2 or line.count("\t") >= 2:
             table_line_count += 1
 
     # Tabelle wahrscheinlich wenn mehrere Zeilen mit Tabellen-Struktur
@@ -717,8 +713,8 @@ def abort_generation() -> None:
         )
         with urllib.request.urlopen(req, timeout=5):
             pass
-    except Exception:
-        pass
+    except Exception as e:
+        console.print(f"[dim]Abbruch fehlgeschlagen: {e}[/dim]")
 
 
 def chat_completion(

@@ -1,15 +1,15 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """
 Diagnose-Skript: Testet OCR gegen koboldcpp (OpenAI-kompatible API).
 Konvertiert eine PDF-Seite zu PNG und sendet das Bild an das Modell.
 """
 
-import sys
 import subprocess
+import sys
 from pathlib import Path
 
-from ocr_to_markdown import chat_completion, select_ocr_model, _model_config, OCR_PROMPT
+from ocr_to_markdown import OCR_PROMPT, _model_config, chat_completion, select_ocr_model
+
 
 def main():
     pdf_path = sys.argv[1] if len(sys.argv) > 1 else "Jabra Sports_Pace_TechnSpecs_lores.pdf"
