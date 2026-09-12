@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-v1.20.0 - OCR zu Markdown Konverter mit TUI-Dateiauswahl
+v1.21.0 - OCR zu Markdown Konverter mit TUI-Dateiauswahl
  
 Verwendet ein LLM (via koboldcpp mit OpenAI-kompatibler API) um
 Bilddateien und PDFs zu OCR-lesen und als Markdown mit
@@ -28,6 +28,8 @@ Funktionen:
   lädt Modelle automatisch und entlädt sie nach 600s Inaktivität
 - Echtzeit-Streaming mit Wächter: bricht Inferenz bei 30x Zeichenwiederholung
   automatisch via /api/extra/abort ab und setzt die nächste Seite fort
+- Wiederholungsschleifen über Zeilen hinweg (z.B. '---' auf vielen neuen Zeilen)
+  werden nach 20 gleichen Symbolen erkannt und aus dem Text entfernt
 """
 
 import sys
@@ -76,6 +78,10 @@ KOBOLDCPP_SEED = 3502  # Seed für reproduzierbare Ergebnisse
 # Maximale aufeinanderfolgende Zeichenwiederholungen vor Abbruch (Wächter gegen Repetition-Loops)
 MAX_CONSECUTIVE_REPEAT = 30
 MAX_DIVIDER_REPEAT = 80  # Erlaubt Markdown-Trennzeilen wie '---' bis zu 80 Zeichen
+# Dasselbe Symbol über Zeilen/Leerraum hinweg (z.B. "---\n---\n---"): nach 20 Wiederholungen abbrechen
+MAX_REPEATED_SYMBOL = 20
+# Maximaler Leerraum zwischen zwei Wiederholungen, damit sie noch als Kette gelten
+MAX_REPEAT_GAP = 4
 
 # Bevorzugte OCR-Modelle in Prioritätsreihenfolge
 # Das erste verfügbare Modell aus dieser Liste wird verwendet
@@ -724,9 +730,11 @@ def chat_completion(
     """Sende eine Chat-Completion an koboldcpp (OpenAI-kompatible API).
 
     Nutzt Server-Sent Events (SSE) Streaming mit integrierter Schleifenerkennung:
-    Wiederholt das Modell dasselbe Zeichen mehr als 30 Mal hintereinander
-    (z.B. am Dokumentende), wird die Inferenz über /api/extra/abort sofort
-    abgebrochen und der bisherige bereinigte Text zurückgegeben.
+    Wiederholt das Modell dasselbe Zeichen direkt hintereinander (30x) oder
+    dasselbe Symbol über Zeilen/Leerraum hinweg (20x, z.B. "---\n---\n---"),
+    wird die Inferenz über /api/extra/abort sofort abgebrochen, die
+    Wiederholungen werden aus dem Text entfernt und der bereinigte Text
+    zurückgegeben.
 
     Args:
         model_name: Modell-ID aus /v1/models (z.B. "nanonets-ocr.kcpps").
@@ -764,8 +772,15 @@ def chat_completion(
     )
 
     accumulated: list[str] = []
+    # Zähler für direkt aufeinanderfolgende identische Zeichen
     last_char = ""
     repeat_count = 0
+    # Zähler für dasselbe Symbol über Leerraum/Zeilen hinweg (z.B. "---\n\n---\n\n---")
+    last_symbol = ""
+    symbol_count = 0
+    symbol_start = 0
+    symbol_had_gap = False
+    whitespace_gap = 0
     aborted = False
 
     with urllib.request.urlopen(req, timeout=600) as resp:
@@ -787,21 +802,46 @@ def chat_completion(
                     continue
 
                 for ch in content:
+                    accumulated.append(ch)
+                    idx = len(accumulated) - 1
+
+                    # Leerraum zählt nicht als Symbol, sondern als Lücke
+                    if ch.isspace():
+                        whitespace_gap += 1
+                        continue
+
+                    # Direkt aufeinanderfolgende identische Zeichen zählen
                     if ch == last_char:
                         repeat_count += 1
                     else:
                         last_char = ch
                         repeat_count = 1
-                    accumulated.append(ch)
 
-                    limit = MAX_DIVIDER_REPEAT if ch in ("-", "_", "=", " ", "\t") else MAX_CONSECUTIVE_REPEAT
-                    if repeat_count >= limit:
+                    # Dasselbe Symbol über Leerraum hinweg zählen
+                    if ch == last_symbol and whitespace_gap <= MAX_REPEAT_GAP:
+                        symbol_count += 1
+                        if whitespace_gap > 0:
+                            symbol_had_gap = True
+                    else:
+                        last_symbol = ch
+                        symbol_count = 1
+                        symbol_start = idx
+                        symbol_had_gap = False
+                    whitespace_gap = 0
+
+                    limit = MAX_DIVIDER_REPEAT if ch in ("-", "_", "=", "*") else MAX_CONSECUTIVE_REPEAT
+                    loop_detected = repeat_count >= limit
+                    if not loop_detected and symbol_had_gap and symbol_count >= MAX_REPEATED_SYMBOL:
+                        loop_detected = True
+
+                    if loop_detected:
                         console.print(
-                            f"\n[yellow]Wiederholungsschleife erkannt (Zeichen '{last_char}' {repeat_count}x wiederholt). Breche Inferenz ab...[/yellow]"
+                            f"\n[yellow]Wiederholungsschleife erkannt (Symbol '{last_symbol}' {symbol_count}x). Breche Inferenz ab...[/yellow]"
                         )
                         aborted = True
                         abort_generation()
-                        del accumulated[-repeat_count:]
+                        # Wiederholten Abschnitt (inkl. Leerraum) aus dem Text entfernen
+                        del accumulated[symbol_start:]
                         break
 
                 if aborted:
@@ -1396,7 +1436,7 @@ def convert_html_tables_in_file(md_path: Path) -> None:
 
 def main():
     """Hauptfunktion: Dateiauswahl, OCR-Verarbeitung, Speichern."""
-    console.print("\n[bold cyan]OCR to Markdown Tool v1.20.0[/bold cyan]\n")
+    console.print("\n[bold cyan]OCR to Markdown Tool v1.21.0[/bold cyan]\n")
 
     table_mode = "-t" in sys.argv
     debug_mode = "-d" in sys.argv

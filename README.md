@@ -11,7 +11,7 @@ Ein CLI-Tool zur Konvertierung von Bildern und PDFs in Markdown mithilfe lokaler
 - **Spracherkennung**: Automatische Erkennung von Deutsch, Englisch, Französisch und Spanisch
 - **Markdown-Nachbearbeitung**: Rechtschreibung, Formatierung und Duplikate werden korrigiert
 - **HTML-zu-Markdown Tabellenkonvertierung**: Nachträgliche Konvertierung von HTML-Tabellen in Markdown (`-t` Flag)
-- **Echtzeit-Streaming mit Schleifenerkennung**: Erkennt Repetition-Loops (wenn dasselbe Zeichen ≥ 30x am Dokumentende generiert wird), bricht die Inferenz über koboldcpps `/api/extra/abort` sofort ab und setzt den Prozess mit der nächsten Seite fort
+- **Echtzeit-Streaming mit Schleifenerkennung**: Erkennt Repetition-Loops (wenn dasselbe Zeichen ≥ 30x am Dokumentende generiert wird, oder dasselbe Symbol ≥ 20x über mehrere Zeilen hinweg wie `---`), bricht die Inferenz über koboldcpps `/api/extra/abort` sofort ab, entfernt die Wiederholungen und setzt den Prozess mit der nächsten Seite fort
 - **PDF-Texteinbettung**: OCR-Text wird optional in die Quell-PDF eingefügt
 - **TUI-Dateiauswahl**: Interaktive Dateiauswahl mit [questionary](https://github.com/tmbo/questionary)
 - **Fortschrittsanzeige**: Visuelle Fortschrittsanzeige mit [rich](https://github.com/Textualize/rich)
@@ -152,9 +152,16 @@ Sollte das OCR-Modell am Ende einer Seite in eine Wiederholungsschleife verfalle
 ```python
 MAX_CONSECUTIVE_REPEAT = 30  # Max. aufeinanderfolgende Zeichenwiederholungen
 MAX_DIVIDER_REPEAT = 80      # Erlaubt Trennzeilen (wie '---' oder '===') bis 80 Zeichen
+MAX_REPEATED_SYMBOL = 20     # Gleiches Symbol über mehrere Zeilen (z.B. '---\n---')
+MAX_REPEAT_GAP = 4           # Max. Leerzeichen zwischen Wiederholungen (Zeilenumbrüche)
 ```
 
-Der Abbruch erfolgt latenzfrei direkt über koboldcpps native `/api/extra/abort`-Schnittstelle.
+Die Erkennung unterscheidet zwei Fälle:
+
+1. **Direkt aufeinanderfolgend** — dasselbe Zeichen 30x hintereinander (Trennzeichen wie `-`, `_`, `=`, `*` bis 80x, um legitime Markdown-Linien zu erlauben).
+2. **Über Zeilen hinweg** — dasselbe Symbol 20x, auch wenn Zeilenumbrüche dazwischen liegen (`MAX_REPEAT_GAP` erlaubt bis zu 4 Leerzeichen/Umbrüche pro Wiederholung). Damit wird das typische Muster `---\n\n---\n\n---...` erkannt, bei dem jedes Wiederholungszeichen in einer neuen Zeile steht.
+
+Der Abbruch erfolgt latenzfrei direkt über koboldcpps native `/api/extra/abort`-Schnittstelle; die erkannte Wiederholungssequenz wird aus dem Ergebnis entfernt.
 
 ## Wie es funktioniert
 
