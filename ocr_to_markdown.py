@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-v1.19.1 - OCR zu Markdown Konverter mit TUI-Dateiauswahl
+v1.20.0 - OCR zu Markdown Konverter mit TUI-Dateiauswahl
  
 Verwendet ein LLM (via koboldcpp mit OpenAI-kompatibler API) um
 Bilddateien und PDFs zu OCR-lesen und als Markdown mit
@@ -26,6 +26,8 @@ Funktionen:
 - Frontmatter mit UUID in jeder erstellten .md Datei
 - koboldcpp läuft lokal mit OpenAI-kompatibler API (http://localhost:5001/v1),
   lädt Modelle automatisch und entlädt sie nach 600s Inaktivität
+- Echtzeit-Streaming mit Wächter: bricht Inferenz bei 30x Zeichenwiederholung
+  automatisch via /api/extra/abort ab und setzt die nächste Seite fort
 """
 
 import sys
@@ -70,6 +72,10 @@ MIN_PDF_DPI = 50
 # und entlädt sie nach 600s Inaktivität
 KOBOLDCPP_API_BASE = "http://localhost:5001/v1"
 KOBOLDCPP_SEED = 3502  # Seed für reproduzierbare Ergebnisse
+
+# Maximale aufeinanderfolgende Zeichenwiederholungen vor Abbruch (Wächter gegen Repetition-Loops)
+MAX_CONSECUTIVE_REPEAT = 30
+MAX_DIVIDER_REPEAT = 80  # Erlaubt Markdown-Trennzeilen wie '---' bis zu 80 Zeichen
 
 # Bevorzugte OCR-Modelle in Prioritätsreihenfolge
 # Das erste verfügbare Modell aus dieser Liste wird verwendet
@@ -693,6 +699,22 @@ def resolve_model_id(preferred: str) -> str:
     return preferred
 
 
+def abort_generation() -> None:
+    """Bricht die laufende Inferenz in koboldcpp sofort ab."""
+    try:
+        base = KOBOLDCPP_API_BASE.rsplit("/v1", 1)[0]
+        req = urllib.request.Request(
+            f"{base}/api/extra/abort",
+            data=b"{}",
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        with urllib.request.urlopen(req, timeout=5):
+            pass
+    except Exception:
+        pass
+
+
 def chat_completion(
     model_name: str,
     messages: list[dict],
@@ -700,6 +722,11 @@ def chat_completion(
     image_bytes: bytes | None = None,
 ) -> str:
     """Sende eine Chat-Completion an koboldcpp (OpenAI-kompatible API).
+
+    Nutzt Server-Sent Events (SSE) Streaming mit integrierter Schleifenerkennung:
+    Wiederholt das Modell dasselbe Zeichen mehr als 30 Mal hintereinander
+    (z.B. am Dokumentende), wird die Inferenz über /api/extra/abort sofort
+    abgebrochen und der bisherige bereinigte Text zurückgegeben.
 
     Args:
         model_name: Modell-ID aus /v1/models (z.B. "nanonets-ocr.kcpps").
@@ -725,7 +752,7 @@ def chat_completion(
         }
         messages = messages[:-1] + [last]
 
-    body = {"model": model_name, "messages": messages}
+    body = {"model": model_name, "messages": messages, "stream": True}
     if config:
         body.update(config)
 
@@ -735,9 +762,54 @@ def chat_completion(
         headers={"Content-Type": "application/json"},
         method="POST",
     )
+
+    accumulated: list[str] = []
+    last_char = ""
+    repeat_count = 0
+    aborted = False
+
     with urllib.request.urlopen(req, timeout=600) as resp:
-        data = json.load(resp)
-    return data["choices"][0]["message"]["content"]
+        for line in resp:
+            line_str = line.decode("utf-8", errors="replace").strip()
+            if not line_str.startswith("data:"):
+                continue
+            data_str = line_str[5:].strip()
+            if data_str == "[DONE]":
+                break
+            try:
+                chunk = json.loads(data_str)
+                choices = chunk.get("choices", [])
+                if not choices:
+                    continue
+                delta = choices[0].get("delta", {})
+                content = delta.get("content", "")
+                if not content:
+                    continue
+
+                for ch in content:
+                    if ch == last_char:
+                        repeat_count += 1
+                    else:
+                        last_char = ch
+                        repeat_count = 1
+                    accumulated.append(ch)
+
+                    limit = MAX_DIVIDER_REPEAT if ch in ("-", "_", "=", " ", "\t") else MAX_CONSECUTIVE_REPEAT
+                    if repeat_count >= limit:
+                        console.print(
+                            f"\n[yellow]Wiederholungsschleife erkannt (Zeichen '{last_char}' {repeat_count}x wiederholt). Breche Inferenz ab...[/yellow]"
+                        )
+                        aborted = True
+                        abort_generation()
+                        del accumulated[-repeat_count:]
+                        break
+
+                if aborted:
+                    break
+            except json.JSONDecodeError:
+                continue
+
+    return "".join(accumulated)
 
 
 def select_ocr_model() -> str:
@@ -1324,7 +1396,7 @@ def convert_html_tables_in_file(md_path: Path) -> None:
 
 def main():
     """Hauptfunktion: Dateiauswahl, OCR-Verarbeitung, Speichern."""
-    console.print("\n[bold cyan]OCR to Markdown Tool v1.19.0[/bold cyan]\n")
+    console.print("\n[bold cyan]OCR to Markdown Tool v1.20.0[/bold cyan]\n")
 
     table_mode = "-t" in sys.argv
     debug_mode = "-d" in sys.argv

@@ -11,6 +11,7 @@ Ein CLI-Tool zur Konvertierung von Bildern und PDFs in Markdown mithilfe lokaler
 - **Spracherkennung**: Automatische Erkennung von Deutsch, Englisch, Französisch und Spanisch
 - **Markdown-Nachbearbeitung**: Rechtschreibung, Formatierung und Duplikate werden korrigiert
 - **HTML-zu-Markdown Tabellenkonvertierung**: Nachträgliche Konvertierung von HTML-Tabellen in Markdown (`-t` Flag)
+- **Echtzeit-Streaming mit Schleifenerkennung**: Erkennt Repetition-Loops (wenn dasselbe Zeichen ≥ 30x am Dokumentende generiert wird), bricht die Inferenz über koboldcpps `/api/extra/abort` sofort ab und setzt den Prozess mit der nächsten Seite fort
 - **PDF-Texteinbettung**: OCR-Text wird optional in die Quell-PDF eingefügt
 - **TUI-Dateiauswahl**: Interaktive Dateiauswahl mit [questionary](https://github.com/tmbo/questionary)
 - **Fortschrittsanzeige**: Visuelle Fortschrittsanzeige mit [rich](https://github.com/Textualize/rich)
@@ -143,6 +144,17 @@ KOBOLDCPP_SEED = 3502
 ```
 
 koboldcpp lädt Modelle bei Bedarf automatisch und entlädt sie nach 600 Sekunden Inaktivität (Server-Einstellung `--adminunloadtimeout`) — das Tool selbst verwaltet kein Laden/Entladen mehr. Voraussetzung für ein geladen bleibendes Modell: Jeder Request muss die exakte Modell-ID (Dateiname) verwenden — das übernimmt das Tool automatisch.
+
+### Schleifenerkennung (Repetition Loop Guard)
+
+Sollte das OCR-Modell am Ende einer Seite in eine Wiederholungsschleife verfallen (z.B. ein Zeichen wiederholt ausgeben), bricht das Tool die Inferenz automatisch ab, schneidet die überflüssigen Zeichen ab und rettet den bisherigen Text:
+
+```python
+MAX_CONSECUTIVE_REPEAT = 30  # Max. aufeinanderfolgende Zeichenwiederholungen
+MAX_DIVIDER_REPEAT = 80      # Erlaubt Trennzeilen (wie '---' oder '===') bis 80 Zeichen
+```
+
+Der Abbruch erfolgt latenzfrei direkt über koboldcpps native `/api/extra/abort`-Schnittstelle.
 
 ## Wie es funktioniert
 
